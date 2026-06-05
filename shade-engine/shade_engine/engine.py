@@ -77,27 +77,28 @@ def sample_polyline(
     if spacing_m <= 0:
         raise ValueError("spacing_m must be > 0")
 
+    eps = 1e-6
     out: list[tuple[float, float, float]] = [(coords[0][0], coords[0][1], 0.0)]
-    cumulative = 0.0
-    carry = 0.0  # 다음 샘플까지 남은 거리
+    cumulative = 0.0  # 처리한 세그먼트들의 누적 길이(현재 세그먼트 시작점까지)
+    next_target = spacing_m  # 다음 샘플의 목표 누적거리
 
+    # 누적거리가 spacing 의 배수가 될 때마다 샘플을 찍는다(경계 정점도 정확히 한 번 포함).
     for (lat1, lon1), (lat2, lon2) in zip(coords, coords[1:]):
         seg_len = haversine_m(lat1, lon1, lat2, lon2)
         if seg_len < 1e-9:
             continue
-        dist_into_seg = carry
-        while dist_into_seg < seg_len:
-            if dist_into_seg > 0:  # 세그먼트 시작점(=이전 끝점)은 중복이라 건너뜀
-                frac = dist_into_seg / seg_len
-                lat = lat1 + (lat2 - lat1) * frac
-                lon = lon1 + (lon2 - lon1) * frac
-                out.append((lat, lon, cumulative + dist_into_seg))
-            dist_into_seg += spacing_m
-        cumulative += seg_len
-        carry = dist_into_seg - seg_len
+        seg_end = cumulative + seg_len
+        while next_target <= seg_end + eps:
+            frac = min(max((next_target - cumulative) / seg_len, 0.0), 1.0)
+            lat = lat1 + (lat2 - lat1) * frac
+            lon = lon1 + (lon2 - lon1) * frac
+            out.append((lat, lon, next_target))
+            next_target += spacing_m
+        cumulative = seg_end
 
-    last = coords[-1]
-    if out[-1][2] < cumulative - 1e-6:
+    # 마지막 정점이 마지막 샘플과 다르면(=총거리가 spacing 의 배수가 아니면) 끝점을 추가
+    if out[-1][2] < cumulative - eps:
+        last = coords[-1]
         out.append((last[0], last[1], cumulative))
     return out
 

@@ -18,6 +18,19 @@ def test_sample_polyline_spacing_and_endpoints():
         assert b - a <= 10.5
 
 
+def test_sample_polyline_boundary_vertex_not_dropped():
+    # 코덱스 회귀: 세그먼트 길이가 spacing 과 정렬될 때 경계 정점이 누락되면 안 됨.
+    # 약 10m 짜리 두 구간 + 10m 간격 → 0, 10, 20m 세 샘플 모두 존재해야 한다.
+    step = 0.0000898  # 약 10m (위도)
+    coords = [(37.5, 127.0), (37.5 + step, 127.0), (37.5 + 2 * step, 127.0)]
+    samples = sample_polyline(coords, spacing_m=10.0)
+    dists = [round(s[2]) for s in samples]
+    assert 10 in dists  # 중간 정점(≈10m)이 살아있어야 함
+    assert dists == sorted(dists)
+    for a, b in zip(dists, dists[1:]):
+        assert b - a <= 11  # 간격이 두 배(20m)로 벌어지지 않음
+
+
 def test_sample_polyline_single_point():
     assert sample_polyline([(37.5, 127.0)]) == [(37.5, 127.0, 0.0)]
 
