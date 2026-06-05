@@ -1,18 +1,24 @@
 package com.shelter.shade.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.shelter.shade.data.DepartureSuggestResponse
+import com.shelter.shade.data.LatLng
 import com.shelter.shade.data.RoutesResponse
-import com.shelter.shade.data.ShadeRepository
 import com.shelter.shade.data.ShadeResponse
+import com.shelter.shade.engine.LocalShadeEngine
 import com.shelter.shade.util.GeoFormat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
@@ -53,12 +59,13 @@ data class ShadeUiState(
 
 private val KST: ZoneOffset = ZoneOffset.ofHours(9)
 
-class ShadeViewModel(
-    private val repository: ShadeRepository = ShadeRepository(),
-) : ViewModel() {
+/** 백엔드 없이 기기 내 LocalShadeEngine 으로 계산한다. */
+class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow(ShadeUiState())
     val state: StateFlow<ShadeUiState> = _state.asStateFlow()
+
+    private val engine: LocalShadeEngine by lazy { LocalShadeEngine.get(getApplication()) }
 
     fun onOriginLat(v: String) = _state.update { it.copy(originLat = v) }
     fun onOriginLon(v: String) = _state.update { it.copy(originLon = v) }
@@ -69,24 +76,50 @@ class ShadeViewModel(
     fun onPrefer(prefer: String) = _state.update { it.copy(prefer = prefer) }
     fun selectOption(index: Int) = _state.update { it.copy(selectedOption = index) }
 
+    fun computeShade() {
+        val s = _state.value
+        val (origin, dest) = parseEnds(s) ?: run {
+            _state.update { it.copy(result = ShadeUiResult.Error("좌표 형식이 올바르지 않습니다.")) }
+            return
+        }
+        _state.update { it.copy(result = ShadeUiResult.Loading) }
+        viewModelScope.launch {
+            val r = runCatching {
+                val odt = departOdt(s.departHour)
+                withContext(Dispatchers.Default) {
+                    engine.computeShade(origin, dest, odt.toInstant().toEpochMilli(), odt.toString(), s.mode)
+                }
+            }
+            _state.update {
+                it.copy(
+                    result = r.fold(
+                        onSuccess = { resp -> ShadeUiResult.Success(resp) },
+                        onFailure = { e -> ShadeUiResult.Error(e.message ?: "계산 실패") },
+                    )
+                )
+            }
+        }
+    }
+
     fun planRoutes() {
         val s = _state.value
-        val origin = GeoFormat.parseLatLng(s.originLat, s.originLon)
-        val dest = GeoFormat.parseLatLng(s.destLat, s.destLon)
-        if (origin == null || dest == null) {
+        val (origin, dest) = parseEnds(s) ?: run {
             _state.update { it.copy(routes = RoutesUiResult.Error("좌표 형식이 올바르지 않습니다.")) }
             return
         }
         _state.update { it.copy(routes = RoutesUiResult.Loading, selectedOption = 0) }
         viewModelScope.launch {
-            val result = runCatching {
-                repository.fetchRouteOptions(origin, dest, departIso(s.departHour), s.mode, s.prefer)
+            val r = runCatching {
+                val odt = departOdt(s.departHour)
+                withContext(Dispatchers.Default) {
+                    engine.planRoutes(origin, dest, odt.toInstant().toEpochMilli(), odt.toString(), s.mode, s.prefer)
+                }
             }
             _state.update {
                 it.copy(
-                    routes = result.fold(
+                    routes = r.fold(
                         onSuccess = { resp -> RoutesUiResult.Success(resp) },
-                        onFailure = { e -> RoutesUiResult.Error(e.message ?: "요청 실패") },
+                        onFailure = { e -> RoutesUiResult.Error(e.message ?: "계산 실패") },
                     )
                 )
             }
@@ -95,52 +128,34 @@ class ShadeViewModel(
 
     fun suggestDeparture() {
         val s = _state.value
-        val origin = GeoFormat.parseLatLng(s.originLat, s.originLon)
-        val dest = GeoFormat.parseLatLng(s.destLat, s.destLon)
-        if (origin == null || dest == null) {
+        val (origin, dest) = parseEnds(s) ?: run {
             _state.update { it.copy(departure = DepartureUiResult.Error("좌표 형식이 올바르지 않습니다.")) }
             return
         }
         _state.update { it.copy(departure = DepartureUiResult.Loading) }
         viewModelScope.launch {
-            val result = runCatching {
-                repository.suggestDeparture(origin, dest, s.mode, s.prefer)
+            val r = runCatching {
+                withContext(Dispatchers.Default) {
+                    engine.suggestDeparture(origin, dest, Instant.now().toEpochMilli(), s.mode, s.prefer)
+                }
             }
             _state.update {
                 it.copy(
-                    departure = result.fold(
+                    departure = r.fold(
                         onSuccess = { resp -> DepartureUiResult.Success(resp) },
-                        onFailure = { e -> DepartureUiResult.Error(e.message ?: "요청 실패") },
+                        onFailure = { e -> DepartureUiResult.Error(e.message ?: "계산 실패") },
                     )
                 )
             }
         }
     }
 
-    fun computeShade() {
-        val s = _state.value
-        val origin = GeoFormat.parseLatLng(s.originLat, s.originLon)
-        val dest = GeoFormat.parseLatLng(s.destLat, s.destLon)
-        if (origin == null || dest == null) {
-            _state.update { it.copy(result = ShadeUiResult.Error("좌표 형식이 올바르지 않습니다.")) }
-            return
-        }
-        _state.update { it.copy(result = ShadeUiResult.Loading) }
-        viewModelScope.launch {
-            val result = runCatching {
-                repository.fetchRouteShade(origin, dest, departIso(s.departHour), s.mode)
-            }
-            _state.update {
-                it.copy(
-                    result = result.fold(
-                        onSuccess = { resp -> ShadeUiResult.Success(resp) },
-                        onFailure = { e -> ShadeUiResult.Error(e.message ?: "요청 실패") },
-                    )
-                )
-            }
-        }
+    private fun parseEnds(s: ShadeUiState): Pair<LatLng, LatLng>? {
+        val origin = GeoFormat.parseLatLng(s.originLat, s.originLon) ?: return null
+        val dest = GeoFormat.parseLatLng(s.destLat, s.destLon) ?: return null
+        return origin to dest
     }
 
-    private fun departIso(hour: Int): String =
-        OffsetDateTime.of(LocalDate.now(KST), java.time.LocalTime.of(hour, 0), KST).toString()
+    private fun departOdt(hour: Int): OffsetDateTime =
+        OffsetDateTime.of(LocalDate.now(KST), LocalTime.of(hour, 0), KST)
 }
