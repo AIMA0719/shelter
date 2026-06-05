@@ -9,6 +9,7 @@ Thumbs.db
 build/
 node_modules/
 .gradle/
+local.properties
 *.iml
 __pycache__/
 .venv/
