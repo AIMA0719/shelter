@@ -52,6 +52,20 @@ python -m pip install -r requirements.txt
 PYTHONPATH=../shade-engine uvicorn app.main:app --reload --port 8000
 ```
 
+### 실제 데이터로 실행 (.env)
+`.env`(git 제외)에 데이터 경로/키를 넣고 `--env-file` 로 띄운다:
+```bash
+# backend/.env 예시
+#   SHELTER_BUILDINGS_GEOJSON=data/seoul_gangnam_buildings.geojson
+#   SHELTER_WALK_NETWORK_GEOJSON=data/seoul_gangnam_walk_network.geojson
+#   SHELTER_KMA_SERVICE_KEY=<기상청 일반 인증키(Decoding)>
+cd backend && uvicorn app.main:app --env-file .env --port 8000
+```
+- 건물 데이터 변환(GIS건물통합정보 SHP→GeoJSON): `shade-engine/scripts/shp_to_buildings.py`
+  (권역만: `--bbox MIN_LAT MIN_LON MAX_LAT MAX_LON`).
+- 보행망(OSM): `shade-engine/scripts/fetch_walk_network.py` 또는 `fetch_district.py`.
+- 키가 있으면 `/v1/routes` 의 `weather.source` 가 `kma`(현재 시각대), `routing` 이 `osm`.
+
 ## 테스트
 ```bash
 cd backend

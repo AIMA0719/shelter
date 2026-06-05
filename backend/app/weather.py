@@ -162,11 +162,13 @@ class KMAWeatherProvider:
     def _fetch(self, lat: float, lon: float, dt: datetime) -> WeatherInfo:
         nx, ny = latlon_to_grid(lat, lon)
 
-        # KST 로 변환 후 현재 시각 기준 안전한 관측 시각 계산
-        # 초단기실황은 매 정시 발표이나 실제 서비스 반영에 ~40분 소요되므로 40분을 뺀다.
-        kst_dt = dt.astimezone(_KST) - timedelta(minutes=40)
+        # 초단기실황은 매시각 정시 생성 + "매시각 10분 이후" 제공(가이드 기준).
+        # 정시 후 10분이 안 됐으면 직전 시각 관측을 사용한다.
+        kst_dt = dt.astimezone(_KST)
+        if kst_dt.minute < 10:
+            kst_dt = kst_dt - timedelta(hours=1)
         base_date = kst_dt.strftime("%Y%m%d")
-        base_time = kst_dt.strftime("%H00")  # 정시(분은 00)로 내림
+        base_time = kst_dt.strftime("%H00")  # 정시(분은 00)
 
         params = urllib.parse.urlencode(
             {

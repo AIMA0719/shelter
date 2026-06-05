@@ -19,3 +19,6 @@ venv/
 .pytest_cache/
 out.html
 .env
+# 변환/다운로드한 대용량 권역 데이터(샘플 sample_* 는 유지). SHP 에서 재생성 가능.
+backend/data/seoul_*
+backend/data/gangnam_*
