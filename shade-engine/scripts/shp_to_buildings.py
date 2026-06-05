@@ -3,6 +3,9 @@
 서울 전역(약 70만 동)은 PostGIS 적재용으로 전체 변환하고, 인메모리 백엔드(MVP/권역)는
 --bbox 로 권역만 잘라 쓴다. 좌표는 EPSG:5186(중부원점)→WGS84(EPSG:4326)로 재투영한다.
 
+의존성: pyshp, pyproj (코어 엔진엔 불필요). 설치:
+  pip install -e "shade-engine[gis]"   # 또는  pip install pyshp pyproj
+
 속성 매핑(AL_D010):
   A16 = 건물 높이(m)        → height (있으면 우선, 실측값)
   A26 = 지상층수            → building:levels (높이 없을 때 층고 3m로 추정)

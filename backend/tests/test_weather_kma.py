@@ -9,13 +9,18 @@ import os
 
 import pytest
 
+from datetime import datetime, timedelta, timezone
+
 from app.weather import (
     KMAWeatherProvider,
     StubWeatherProvider,
+    _base_date_time,
     _parse_ultra_srt_ncst,
     get_weather_provider,
     latlon_to_grid,
 )
+
+_KST = timezone(timedelta(hours=9))
 
 
 # ---------------------------------------------------------------------------
@@ -129,10 +134,18 @@ def test_kma_provider_requires_key():
 
 def test_kma_future_departure_falls_back_to_stub():
     """코덱스 회귀: 미래 출발시각은 관측이 없으므로 stub 으로 폴백(네트워크 미사용)."""
-    from datetime import datetime, timedelta, timezone
-
     provider = KMAWeatherProvider("dummy-key")
     future = datetime.now(timezone.utc) + timedelta(days=1)  # 내일 → 관측 불가
     info = provider.badge(37.5665, 126.9780, future)
     assert info.source == "stub"  # KMA 관측 대신 stub 사용
     assert info.temp_c is not None
+
+
+def test_base_date_time_respects_10min_rule():
+    """코덱스 회귀: 발표시각은 정시 후 10분 규칙(현재 기준)을 따른다."""
+    # 14:12 → 14:00 제공됨
+    assert _base_date_time(datetime(2026, 7, 15, 14, 12, tzinfo=_KST)) == ("20260715", "1400")
+    # 14:05 → 아직 14:00 미제공 → 직전 13:00
+    assert _base_date_time(datetime(2026, 7, 15, 14, 5, tzinfo=_KST)) == ("20260715", "1300")
+    # 00:05 → 직전 날 23:00
+    assert _base_date_time(datetime(2026, 7, 15, 0, 5, tzinfo=_KST)) == ("20260714", "2300")

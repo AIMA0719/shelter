@@ -124,6 +124,18 @@ _KMA_ENDPOINT = (
 _KST = timezone(timedelta(hours=9))
 
 
+def _base_date_time(now_kst: datetime) -> tuple[str, str]:
+    """현재(KST) 기준 가장 최근에 제공되는 초단기실황 발표일자/시각.
+
+    매시각 정시 생성 + '매시각 10분 이후' 제공이므로, 정시 후 10분이 안 됐으면
+    직전 시각을 쓴다. 관측은 '현재' 기준이어야 한다(요청 출발시각이 아니라).
+    """
+    t = now_kst
+    if t.minute < 10:
+        t = t - timedelta(hours=1)
+    return t.strftime("%Y%m%d"), t.strftime("%H00")
+
+
 class KMAWeatherProvider:
     """기상청(KMA) 초단기실황 API 를 사용한 실시간 기상 제공자.
 
@@ -162,13 +174,10 @@ class KMAWeatherProvider:
     def _fetch(self, lat: float, lon: float, dt: datetime) -> WeatherInfo:
         nx, ny = latlon_to_grid(lat, lon)
 
-        # 초단기실황은 매시각 정시 생성 + "매시각 10분 이후" 제공(가이드 기준).
-        # 정시 후 10분이 안 됐으면 직전 시각 관측을 사용한다.
-        kst_dt = dt.astimezone(_KST)
-        if kst_dt.minute < 10:
-            kst_dt = kst_dt - timedelta(hours=1)
-        base_date = kst_dt.strftime("%Y%m%d")
-        base_time = kst_dt.strftime("%H00")  # 정시(분은 00)
+        # 초단기실황은 '현재 관측'이므로 요청 출발시각(dt)이 아니라 현재 시각 기준으로
+        # 가장 최근 발표분을 조회한다(근미래 출발이 다음 시각으로 넘어가 미제공 관측을
+        # 조회하던 문제 방지).
+        base_date, base_time = _base_date_time(datetime.now(_KST))
 
         params = urllib.parse.urlencode(
             {

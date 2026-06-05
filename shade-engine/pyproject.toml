@@ -11,6 +11,8 @@ dependencies = []  # 코어는 표준 라이브러리만 사용
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4"]
+# GIS건물통합정보 SHP 변환(scripts/shp_to_buildings.py)용. 코어는 불필요.
+gis = ["pyshp>=2.3", "pyproj>=3.6"]
 
 [tool.setuptools]
 packages = ["shade_engine"]
