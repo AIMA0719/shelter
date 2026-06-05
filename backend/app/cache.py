@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .models import LatLng
 
@@ -17,13 +17,20 @@ from .models import LatLng
 def route_cache_key(
     coords: list[LatLng], depart: datetime, mode: str, spacing_m: float, moving_sun: bool
 ) -> str:
-    """경로 좌표(약 11m 격자로 라운딩) + 날짜 + 시각대(시) 기반 캐시 키."""
+    """경로 좌표(약 11m 격자로 라운딩) + 출발 시각(UTC 정규화·분 단위) 기반 캐시 키.
+
+    그늘은 출발 시각에 연속적으로 의존하므로 시(hour) 단위 버킷은 같은 시간대의 다른
+    시각(또는 다른 타임존)을 충돌시켜 잘못된 결과를 줄 수 있다. 타임존을 UTC 로
+    정규화하고 분 단위까지 키에 포함해 충돌을 막는다(동일 요청은 그대로 캐시 적중).
+    """
     # 1e-4도 ≈ 11m 로 라운딩해 미세한 좌표 차이를 같은 키로 묶는다.
     coord_sig = ";".join(f"{round(p.lat, 4)},{round(p.lon, 4)}" for p in coords)
     digest = hashlib.sha1(coord_sig.encode("utf-8")).hexdigest()[:16]
-    date_bucket = depart.strftime("%Y%m%d")
-    hour_bucket = depart.hour
-    return f"{digest}|{date_bucket}|{hour_bucket}|{mode}|{spacing_m}|{int(moving_sun)}"
+    depart_utc = (
+        depart.replace(tzinfo=timezone.utc) if depart.tzinfo is None else depart.astimezone(timezone.utc)
+    )
+    instant = depart_utc.strftime("%Y%m%dT%H%M")  # UTC 분 단위
+    return f"{digest}|{instant}|{mode}|{spacing_m}|{int(moving_sun)}"
 
 
 class LRUCache:

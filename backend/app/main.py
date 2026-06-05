@@ -42,6 +42,11 @@ def set_service(service: ShadeService | None) -> None:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    # settings 가 주어지면 그 설정으로 서비스를 구성·주입한다(팩토리 인자 존중).
+    # 미지정 시 기존에 주입된 서비스(테스트의 set_service)나 지연 기본 서비스를 쓴다.
+    if settings is not None:
+        set_service(build_service(settings))
+
     app = FastAPI(
         title="Shelter Shade API",
         version=__version__,

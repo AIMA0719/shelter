@@ -72,6 +72,16 @@ def test_shade_origin_destination():
     assert resp.json()["provider"] == "straight"
 
 
+def test_create_app_honors_settings(tmp_path):
+    # 코덱스 회귀: create_app(settings=...) 가 무시되면 안 됨.
+    empty = tmp_path / "empty.geojson"
+    empty.write_text('{"type":"FeatureCollection","features":[]}', encoding="utf-8")
+    set_service(None)
+    app = create_app(settings=Settings(buildings_geojson=str(empty)))
+    client = TestClient(app)
+    assert client.get("/health").json()["buildings_loaded"] == 0
+
+
 def test_invalid_latlng_rejected():
     client = _client_with_synthetic()
     resp = client.post(
