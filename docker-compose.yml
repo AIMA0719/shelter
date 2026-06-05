@@ -1,0 +1,50 @@
+# Shelter — local development / staging stack
+#
+# Usage:
+#   docker compose up -d
+#
+# First-run DB initialisation (run once after postgis is healthy):
+#   docker compose exec postgis psql -U shelter -d shelter \
+#       -c "$(cat backend/app/db/schema.sql)"
+#
+# To ingest building / POI data, run your ingest script with SHELTER_DB_DSN set
+# to postgresql://shelter:shelter@localhost:5432/shelter.
+
+version: "3.9"
+
+services:
+
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: shelter
+      POSTGRES_PASSWORD: shelter
+      POSTGRES_DB: shelter
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shelter -d shelter"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      SHELTER_DB_DSN: postgresql://shelter:shelter@postgis:5432/shelter
+      # Optional — pass from host env if set, otherwise empty string (feature disabled).
+      SHELTER_KMA_SERVICE_KEY: ${SHELTER_KMA_SERVICE_KEY:-}
+      SHELTER_WALK_NETWORK_GEOJSON: ${SHELTER_WALK_NETWORK_GEOJSON:-}
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgis_data:

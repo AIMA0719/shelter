@@ -1,4 +1,7 @@
-from shade_engine.overpass import build_query, parse_overpass
+import json
+
+from shade_engine.buildings import load_geojson
+from shade_engine.overpass import build_query, buildings_to_geojson, parse_overpass
 
 
 def test_build_query_contains_bbox_and_geom():
@@ -68,3 +71,29 @@ def test_parse_relation_building_uses_outer_members():
     assert buildings[0].height_m == 30.0
     assert buildings[0].height_estimated is False
     assert buildings[0].osm_id == "relation/42"
+
+
+def test_buildings_to_geojson_roundtrip(tmp_path):
+    payload = {
+        "elements": [
+            {
+                "type": "way",
+                "id": 7,
+                "tags": {"building": "yes", "building:levels": "4"},
+                "geometry": [
+                    {"lat": 37.5, "lon": 127.0},
+                    {"lat": 37.5, "lon": 127.001},
+                    {"lat": 37.501, "lon": 127.001},
+                ],
+            }
+        ]
+    }
+    fc = buildings_to_geojson(payload)
+    assert len(fc["features"]) == 1
+    p = tmp_path / "b.geojson"
+    p.write_text(json.dumps(fc), encoding="utf-8")
+    loaded = load_geojson(str(p))
+    direct = parse_overpass(payload)
+    assert len(loaded) == len(direct) == 1
+    assert loaded[0].height_m == direct[0].height_m == 12.0  # 4층×3m
+    assert loaded[0].height_estimated is True

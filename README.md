@@ -11,8 +11,8 @@
 
 | 디렉터리 | 내용 | 상태 |
 |---|---|---|
-| [`shade-engine/`](shade-engine/) | 그늘 엔진(태양위치 NOAA + 건물/가로수 레이캐스팅 + OSM 보행 그래프 그늘 라우팅) | 테스트 49개 ✅ |
-| [`backend/`](backend/) | FastAPI 그늘 판정·경로추천·출발시간추천·POI API | 테스트 33개 ✅ |
+| [`shade-engine/`](shade-engine/) | 그늘 엔진(태양위치 NOAA + 건물/가로수 레이캐스팅 + OSM 보행 그래프 그늘 라우팅, 공간 인덱스) | 테스트 57개 ✅ |
+| [`backend/`](backend/) | FastAPI 그늘 판정·경로추천·출발시간추천·POI API (PostGIS·기상청·레이트리밋·Docker) | 테스트 55개 ✅ |
 | [`app/`](app/) | Kotlin/Compose 안드로이드 앱 (네이버 지도 SDK) | `assembleDebug` 빌드 성공 ✅ |
 
 ## 핵심 원리

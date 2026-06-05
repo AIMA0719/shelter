@@ -1,0 +1,33 @@
+# Python bytecode / cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Version control
+.git/
+.gitignore
+
+# Android app — not needed in the backend image
+app/
+
+# Build artefacts
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Node (not used in this repo, but guard anyway)
+node_modules/
+
+# IDE
+.idea/
+
+# Android local config
+local.properties
+
+# Misc output
+out.html

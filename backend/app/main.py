@@ -7,8 +7,13 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from .ratelimit import RateLimiter
 
 from . import __version__
 from .buildings_repo import GeoJSONBuildingsRepository
@@ -33,11 +38,20 @@ _service: ShadeService | None = None
 
 
 def build_service(settings: Settings) -> ShadeService:
-    repo = GeoJSONBuildingsRepository(settings.buildings_geojson)
     provider = get_provider(settings)
     cache = LRUCache(settings.cache_max_entries)
-    # POI 데이터는 /v1/pois 에서만 필요하므로 지연 로드(find_pois)에 맡긴다.
-    # 여기서 강제 로드하면 POI 파일 문제로 핵심 엔드포인트까지 죽는다.
+
+    # 저장소: DSN 이 있으면 PostGIS(서울 전역), 없으면 GeoJSON(MVP/권역).
+    pois = None
+    if settings.db_dsn:
+        from .db.postgis_repo import PostGISBuildingsRepository, PostGISPoisRepository
+
+        repo: object = PostGISBuildingsRepository(settings.db_dsn)
+        pois = PostGISPoisRepository(settings.db_dsn)
+    else:
+        repo = GeoJSONBuildingsRepository(settings.buildings_geojson)
+        # POI(GeoJSON)는 /v1/pois 에서만 필요 → 지연 로드(find_pois). 강제 로드 시
+        # POI 파일 문제가 핵심 엔드포인트까지 죽이는 것을 피한다.
 
     # 보행 네트워크가 설정·존재하면 OSM 그래프 라우팅 사용(없으면 격자 폴백).
     walk_graph = None
@@ -48,7 +62,7 @@ def build_service(settings: Settings) -> ShadeService:
         walk_graph = load_geojson_network(path)
 
     return ShadeService(
-        repo=repo, provider=provider, settings=settings, cache=cache, walk_graph=walk_graph
+        repo=repo, provider=provider, settings=settings, cache=cache, walk_graph=walk_graph, pois=pois
     )
 
 
@@ -82,6 +96,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    limiter = RateLimiter((settings or Settings()).rate_limit_per_min)
+
+    @app.middleware("http")
+    async def _rate_limit(request, call_next):  # type: ignore[no-untyped-def]
+        client_ip = request.client.host if request.client else "?"
+        if not limiter.allow(client_ip, time.monotonic()):
+            return JSONResponse(status_code=429, content={"detail": "요청이 너무 많습니다."})
+        return await call_next(request)
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:

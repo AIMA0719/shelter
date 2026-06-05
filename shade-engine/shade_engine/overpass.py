@@ -90,3 +90,50 @@ def _element_rings(el: dict) -> list[list]:
             return rings
     geometry = el.get("geometry")
     return [geometry] if geometry else []
+
+
+def buildings_to_geojson(payload: dict) -> dict:
+    """Overpass JSON → 건물 Polygon FeatureCollection(좌표 [lon,lat]).
+
+    backend 의 load_geojson 이 읽을 수 있도록 height/building:levels 태그를 보존해,
+    파일을 다시 로드해도 동일하게 높이를 추정한다.
+    """
+    features = []
+    for el in payload.get("elements", []):
+        tags = el.get("tags") or {}
+        if "building" not in tags:
+            continue
+        props = {"id": f"{el.get('type')}/{el.get('id')}"}
+        for k in ("height", "building", "building:levels", "levels", "name"):
+            if k in tags:
+                props[k] = str(tags[k])
+        for ring in _element_rings(el):
+            coords = [[float(p["lon"]), float(p["lat"])] for p in ring if "lat" in p and "lon" in p]
+            if len(coords) >= 3:
+                if coords[0] != coords[-1]:
+                    coords.append(coords[0])  # 링 닫기
+                features.append(
+                    {
+                        "type": "Feature",
+                        "properties": props,
+                        "geometry": {"type": "Polygon", "coordinates": [coords]},
+                    }
+                )
+    return {"type": "FeatureCollection", "features": features}
+
+
+def fetch_buildings_geojson(
+    bbox: tuple[float, float, float, float],
+    *,
+    endpoint: str = DEFAULT_ENDPOINT,
+    timeout: float = 90.0,
+) -> dict:
+    """Overpass 에서 건물을 받아 Polygon GeoJSON 으로 반환(파일 캐시용)."""
+    query = build_query(bbox)
+    data = urllib.parse.urlencode({"data": query}).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint, data=data, headers={"User-Agent": "shelter-shade-engine/0.1"}
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        payload = json.loads(resp.read().decode("utf-8"))
+    return buildings_to_geojson(payload)
