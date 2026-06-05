@@ -6,4 +6,7 @@ import retrofit2.http.POST
 interface ShadeApi {
     @POST("v1/shade")
     suspend fun computeShade(@Body request: ShadeRequest): ShadeResponse
+
+    @POST("v1/routes")
+    suspend fun planRoutes(@Body request: RoutesRequest): RoutesResponse
 }

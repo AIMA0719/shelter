@@ -10,6 +10,8 @@ from .sun import SolarPosition, solar_position
 from .buildings import Building, estimate_height_m, load_geojson
 from .raycast import ShadeResult, is_point_shaded
 from .engine import RouteShade, SamplePoint, compute_route_shade, sample_polyline
+from .routing import RouteOption, plan_routes
+from .trees import Tree, tree_to_building, trees_as_buildings
 
 __all__ = [
     "LocalProjection",
@@ -26,6 +28,11 @@ __all__ = [
     "SamplePoint",
     "compute_route_shade",
     "sample_polyline",
+    "RouteOption",
+    "plan_routes",
+    "Tree",
+    "tree_to_building",
+    "trees_as_buildings",
 ]
 
 __version__ = "0.1.0"

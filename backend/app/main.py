@@ -15,7 +15,13 @@ from .buildings_repo import GeoJSONBuildingsRepository
 from .cache import LRUCache
 from .config import Settings
 from .directions import get_provider
-from .models import HealthResponse, ShadeRequest, ShadeResponse
+from .models import (
+    HealthResponse,
+    RoutesRequest,
+    RoutesResponse,
+    ShadeRequest,
+    ShadeResponse,
+)
 from .shade_service import ShadeService
 
 _service: ShadeService | None = None
@@ -69,6 +75,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         svc = get_service()
         try:
             return svc.compute(req)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/v1/routes", response_model=RoutesResponse)
+    def routes(req: RoutesRequest) -> RoutesResponse:
+        svc = get_service()
+        try:
+            return svc.plan_route_options(req)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -7,7 +7,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-TravelMode = Literal["walk"]  # Phase 1 은 도보만. Phase 2 에서 'bike' 추가.
+TravelMode = Literal["walk", "bike"]  # Phase 2: 자전거 모드 추가
+
+# 모드별 평균 속도(m/s). 이동 중 태양 이동 계산에 사용.
+MODE_SPEED_MPS: dict[str, float] = {"walk": 1.3, "bike": 4.2}
 
 
 class LatLng(BaseModel):
@@ -59,6 +62,39 @@ class ShadeResponse(BaseModel):
     building_count: int
     cached: bool = False
     segments: list[SegmentOut]
+
+
+class WeatherBadge(BaseModel):
+    temp_c: float | None = None
+    uv_index: float | None = None
+    heat_advisory: bool = False
+    source: str
+
+
+class RoutesRequest(BaseModel):
+    """경로 추천: 출발/도착 필수(격자 라우팅)."""
+
+    origin: LatLng
+    destination: LatLng
+    depart_time: datetime | None = None
+    mode: TravelMode = "walk"
+    grid_spacing_m: float = Field(default=20.0, gt=2, le=100)
+
+
+class RouteOptionOut(BaseModel):
+    name: str  # 'shortest' | 'balanced' | 'shadiest'
+    distance_m: float
+    shade_percent: float
+    coords: list[LatLng]
+    segments: list[SegmentOut]
+
+
+class RoutesResponse(BaseModel):
+    depart_time: datetime
+    mode: TravelMode
+    building_count: int
+    weather: WeatherBadge | None = None
+    options: list[RouteOptionOut]
 
 
 class HealthResponse(BaseModel):

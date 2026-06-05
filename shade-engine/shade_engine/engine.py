@@ -15,6 +15,7 @@ from .buildings import Building
 from .geo import LocalProjection, haversine_m
 from .raycast import ProjectedBuilding, ShadeResult, is_point_shaded
 from .sun import solar_position
+from .trees import Tree, trees_as_buildings
 
 DEFAULT_WALK_SPEED_MPS = 1.3  # 보행 평균 속도(약 4.7 km/h)
 DEFAULT_SPACING_M = 10.0
@@ -130,20 +131,23 @@ def compute_route_shade(
     walk_speed_mps: float = DEFAULT_WALK_SPEED_MPS,
     moving_sun: bool = True,
     min_altitude_deg: float = 0.5,
+    trees: list[Tree] | None = None,
 ) -> RouteShade:
     """경로의 구간별 그늘/햇빛 판정 + 그늘 비율 집계.
 
     moving_sun=True 이면 보행 속도로 계산한 각 샘플 도착 시각의 태양 위치를 쓴다
-    (긴 경로에서 이동 중 태양이 움직이는 효과 반영).
+    (긴 경로에서 이동 중 태양이 움직이는 효과 반영). trees 를 주면 가로수 그림자도
+    캐스터에 포함한다.
     """
     samples_geo = sample_polyline(coords, spacing_m)
     if not samples_geo:
         return RouteShade(samples=[], total_distance_m=0.0, shaded_count=0, sunny_count=0)
 
+    obstacles = buildings + trees_as_buildings(trees) if trees else buildings
     lat0 = sum(p[0] for p in samples_geo) / len(samples_geo)
     lon0 = sum(p[1] for p in samples_geo) / len(samples_geo)
     proj = LocalProjection(lat0=lat0, lon0=lon0)
-    projected = _project_buildings(buildings, proj)
+    projected = _project_buildings(obstacles, proj)
     tallest = max((b.height_m for b in projected), default=0.0)
 
     out_samples: list[SamplePoint] = []

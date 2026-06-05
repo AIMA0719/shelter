@@ -32,6 +32,41 @@ data class SegmentOut(
 )
 
 @Serializable
+data class RoutesRequest(
+    val origin: LatLng,
+    val destination: LatLng,
+    @SerialName("depart_time") val departTime: String? = null,
+    val mode: String = "walk",
+    @SerialName("grid_spacing_m") val gridSpacingM: Double = 20.0,
+)
+
+@Serializable
+data class WeatherBadge(
+    @SerialName("temp_c") val tempC: Double? = null,
+    @SerialName("uv_index") val uvIndex: Double? = null,
+    @SerialName("heat_advisory") val heatAdvisory: Boolean = false,
+    val source: String,
+)
+
+@Serializable
+data class RouteOptionOut(
+    val name: String,
+    @SerialName("distance_m") val distanceM: Double,
+    @SerialName("shade_percent") val shadePercent: Double,
+    val coords: List<LatLng>,
+    val segments: List<SegmentOut>,
+)
+
+@Serializable
+data class RoutesResponse(
+    @SerialName("depart_time") val departTime: String,
+    val mode: String,
+    @SerialName("building_count") val buildingCount: Int,
+    val weather: WeatherBadge? = null,
+    val options: List<RouteOptionOut>,
+)
+
+@Serializable
 data class ShadeResponse(
     @SerialName("shade_percent") val shadePercent: Double,
     @SerialName("total_distance_m") val totalDistanceM: Double,

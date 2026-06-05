@@ -17,4 +17,19 @@ class ShadeRepository(private val api: ShadeApi = NetworkModule.shadeApi) {
                 mode = mode,
             )
         )
+
+    suspend fun fetchRouteOptions(
+        origin: LatLng,
+        destination: LatLng,
+        departTimeIso: String,
+        mode: String = "walk",
+    ): RoutesResponse =
+        api.planRoutes(
+            RoutesRequest(
+                origin = origin,
+                destination = destination,
+                departTime = departTimeIso,
+                mode = mode,
+            )
+        )
 }

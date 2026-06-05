@@ -6,12 +6,25 @@ import math
 from datetime import datetime, timezone
 
 from shade_engine.engine import compute_route_shade
+from shade_engine.routing import plan_routes
+from shade_engine.sun import solar_position
 
 from .buildings_repo import BuildingsRepository
 from .cache import LRUCache, route_cache_key
 from .config import Settings
 from .directions import DirectionsProvider
-from .models import LatLng, SegmentOut, ShadeRequest, ShadeResponse
+from .models import (
+    MODE_SPEED_MPS,
+    LatLng,
+    RouteOptionOut,
+    RoutesRequest,
+    RoutesResponse,
+    SegmentOut,
+    ShadeRequest,
+    ShadeResponse,
+    WeatherBadge,
+)
+from .weather import WeatherProvider, get_weather_provider
 
 _M_PER_DEG_LAT = 111_320.0
 
@@ -23,11 +36,13 @@ class ShadeService:
         provider: DirectionsProvider,
         settings: Settings,
         cache: LRUCache | None = None,
+        weather: WeatherProvider | None = None,
     ) -> None:
         self.repo = repo
         self.provider = provider
         self.settings = settings
         self.cache = cache or LRUCache(settings.cache_max_entries)
+        self.weather = weather or get_weather_provider()
 
     def _resolve_coords(self, req: ShadeRequest) -> list[LatLng]:
         if req.coords and len(req.coords) >= 2:
@@ -67,18 +82,10 @@ class ShadeService:
             buildings,
             spacing_m=req.spacing_m,
             moving_sun=req.moving_sun,
+            walk_speed_mps=MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"]),
         )
 
-        segments = [
-            SegmentOut(
-                a=LatLng(lat=s.lat, lon=s.lon),
-                b=LatLng(lat=nxt.lat, lon=nxt.lon),
-                shaded=s.result.shaded,
-                reason=s.result.reason,
-                confidence=round(s.result.confidence, 3),
-            )
-            for s, nxt in zip(route_shade.samples, route_shade.samples[1:])
-        ]
+        segments = _segments_from_shade(route_shade)
 
         response = ShadeResponse(
             shade_percent=route_shade.shade_percent,
@@ -94,3 +101,63 @@ class ShadeService:
         )
         self.cache.set(key, response)
         return response
+
+    def plan_route_options(self, req: RoutesRequest) -> RoutesResponse:
+        """출발→도착에 대해 최단/균형/그늘 경로 후보를 만들고 각각 그늘을 색칠한다."""
+        depart = req.depart_time or datetime.now(timezone.utc)
+        sun = solar_position(req.origin.lat, req.origin.lon, depart)
+
+        min_lat, min_lon, max_lat, max_lon = self._bbox_with_margin([req.origin, req.destination])
+        buildings = self.repo.query_bbox(min_lat, min_lon, max_lat, max_lon)
+
+        speed = MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"])
+        raw_options = plan_routes(
+            (req.origin.lat, req.origin.lon),
+            (req.destination.lat, req.destination.lon),
+            buildings,
+            sun.azimuth_deg,
+            sun.altitude_deg,
+            grid_spacing_m=req.grid_spacing_m,
+        )
+
+        options: list[RouteOptionOut] = []
+        for opt in raw_options:
+            shade = compute_route_shade(
+                opt.coords, depart, buildings, spacing_m=10.0, walk_speed_mps=speed
+            )
+            options.append(
+                RouteOptionOut(
+                    name=opt.name,
+                    distance_m=round(opt.distance_m, 1),
+                    shade_percent=shade.shade_percent,
+                    coords=[LatLng(lat=la, lon=lo) for la, lo in opt.coords],
+                    segments=_segments_from_shade(shade),
+                )
+            )
+
+        info = self.weather.badge(req.origin.lat, req.origin.lon, depart)
+        return RoutesResponse(
+            depart_time=depart,
+            mode=req.mode,
+            building_count=len(buildings),
+            weather=WeatherBadge(
+                temp_c=info.temp_c,
+                uv_index=info.uv_index,
+                heat_advisory=info.heat_advisory,
+                source=info.source,
+            ),
+            options=options,
+        )
+
+
+def _segments_from_shade(route_shade) -> list[SegmentOut]:
+    return [
+        SegmentOut(
+            a=LatLng(lat=s.lat, lon=s.lon),
+            b=LatLng(lat=nxt.lat, lon=nxt.lon),
+            shaded=s.result.shaded,
+            reason=s.result.reason,
+            confidence=round(s.result.confidence, 3),
+        )
+        for s, nxt in zip(route_shade.samples, route_shade.samples[1:])
+    ]

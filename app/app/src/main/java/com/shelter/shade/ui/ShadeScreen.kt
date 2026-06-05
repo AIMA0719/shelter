@@ -11,7 +11,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -23,7 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shelter.shade.data.RouteOptionOut
+import com.shelter.shade.data.RoutesResponse
 import com.shelter.shade.data.ShadeResponse
+import com.shelter.shade.data.WeatherBadge
 
 @Composable
 fun ShadeScreen(viewModel: ShadeViewModel, modifier: Modifier = Modifier) {
@@ -79,6 +84,19 @@ fun ShadeScreen(viewModel: ShadeViewModel, modifier: Modifier = Modifier) {
             steps = 22,
         )
 
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = state.mode == "walk",
+                onClick = { viewModel.onMode("walk") },
+                label = { Text("도보") },
+            )
+            FilterChip(
+                selected = state.mode == "bike",
+                onClick = { viewModel.onMode("bike") },
+                label = { Text("자전거") },
+            )
+        }
+
         Button(
             onClick = viewModel::computeShade,
             modifier = Modifier.fillMaxWidth(),
@@ -86,6 +104,16 @@ fun ShadeScreen(viewModel: ShadeViewModel, modifier: Modifier = Modifier) {
         ) {
             Text("경로 그늘 보기")
         }
+
+        OutlinedButton(
+            onClick = viewModel::planRoutes,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.routes !is RoutesUiResult.Loading,
+        ) {
+            Text("경로 추천 (최단·균형·그늘 비교)")
+        }
+
+        RoutesSection(state.routes, state.selectedOption, viewModel::selectOption)
 
         when (val r = state.result) {
             is ShadeUiResult.Idle -> Unit
@@ -121,4 +149,97 @@ private fun ResultView(resp: ShadeResponse) {
         }
     }
     RouteCanvas(segments = resp.segments, modifier = Modifier.fillMaxWidth())
+}
+
+private fun optionLabel(name: String): String = when (name) {
+    "shortest" -> "최단"
+    "balanced" -> "균형"
+    "shadiest" -> "그늘 최적"
+    else -> name
+}
+
+@Composable
+private fun RoutesSection(
+    routes: RoutesUiResult,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    when (routes) {
+        is RoutesUiResult.Idle -> Unit
+        is RoutesUiResult.Loading -> Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) { CircularProgressIndicator() }
+        is RoutesUiResult.Error -> Card(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "오류: ${routes.message}",
+                modifier = Modifier.padding(16.dp),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        is RoutesUiResult.Success -> RoutesView(routes.response, selected, onSelect)
+    }
+}
+
+@Composable
+private fun RoutesView(resp: RoutesResponse, selected: Int, onSelect: (Int) -> Unit) {
+    resp.weather?.let { WeatherRow(it) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        resp.options.forEachIndexed { i, opt ->
+            OptionCard(
+                option = opt,
+                selected = i == selected,
+                onClick = { onSelect(i) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+    val current = resp.options.getOrNull(selected)
+    if (current != null) {
+        RouteCanvas(segments = current.segments, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun OptionCard(
+    option: RouteOptionOut,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                optionLabel(option.name),
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            Text("그늘 ${option.shadePercent}%", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("${option.distanceM.toInt()} m", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+                Text(if (selected) "선택됨" else "선택")
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeatherRow(weather: WeatherBadge) {
+    val parts = buildList {
+        weather.tempC?.let { add("${it}°C") }
+        weather.uvIndex?.let { add("UV ${it}") }
+        if (weather.heatAdvisory) add("폭염주의")
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            if (parts.isEmpty()) "날씨 정보 없음" else parts.joinToString("  ·  "),
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }
