@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from .buildings import Building
 from .geo import LocalProjection, haversine_m
-from .raycast import ProjectedBuilding, is_point_shaded
+from .raycast import BuildingIndex, ProjectedBuilding
 
 _MAX_SHADOW_DISTANCE_CAP_M = 1500.0
 
@@ -115,15 +115,15 @@ def plan_routes(
     # 각 노드의 햇빛 여부 + 통행 가능 여부를 1회 계산(좁은 영역이라 태양 위치는 거의 일정).
     # 건물 내부 노드는 통행 불가(blocked) — 그렇지 않으면 '값싼 그늘'로 오인되어
     # 경로가 건물을 관통할 수 있다.
+    index = BuildingIndex(projected)
     sunny = [[False] * ncols for _ in range(nrows)]
     blocked = [[False] * ncols for _ in range(nrows)]
     for r in range(nrows):
         for c in range(ncols):
-            res = is_point_shaded(
+            res = index.is_point_shaded(
                 node_xy(r, c),
                 sun_azimuth_deg,
                 sun_altitude_deg,
-                projected,
                 max_distance_m=max(max_dist, spacing),
             )
             sunny[r][c] = not res.shaded

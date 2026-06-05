@@ -33,12 +33,20 @@ _EXCLUDED_HIGHWAY = {
 }
 
 
+_NEAREST_CELL_DEG = 0.002  # 약 200m 격자
+# deg→m 하한(위도 1도 ≈ 111km, 경도는 더 짧음) — 링 종료 조건의 보수적 하한
+_DEG_TO_M_LOWER = 88_000.0
+
+
 @dataclass
 class OsmGraph:
     """무방향 보행 그래프. nodes[i] = (lat, lon), adj[i] = [(j, 거리m), ...]."""
 
     nodes: list[tuple[float, float]] = field(default_factory=list)
     adj: dict[int, list[tuple[int, float]]] = field(default_factory=lambda: defaultdict(list))
+    _index: dict[tuple[int, int], list[int]] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def node_count(self) -> int:
         return len(self.nodes)
@@ -46,16 +54,61 @@ class OsmGraph:
     def edge_count(self) -> int:
         return sum(len(v) for v in self.adj.values()) // 2
 
+    def _ensure_index(self) -> None:
+        if self._index is not None:
+            return
+        grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+        cell = _NEAREST_CELL_DEG
+        for i, (lat, lon) in enumerate(self.nodes):
+            grid[(int(lat // cell), int(lon // cell))].append(i)
+        self._index = grid
+
     def nearest_node(self, lat: float, lon: float) -> int:
-        """주어진 좌표에 가장 가까운 노드 인덱스(선형 탐색)."""
+        """주어진 좌표에 가장 가까운 노드 인덱스(그리드 인덱스 + 확장 링 탐색)."""
         if not self.nodes:
             raise ValueError("빈 그래프입니다.")
-        best_i, best_d = 0, float("inf")
-        for i, (nlat, nlon) in enumerate(self.nodes):
+        self._ensure_index()
+        assert self._index is not None
+        cell = _NEAREST_CELL_DEG
+        cell_m = cell * _DEG_TO_M_LOWER
+        cx, cy = int(lat // cell), int(lon // cell)
+
+        best_i, best_d = -1, float("inf")
+        max_r = 64  # 약 12.8km 까지 탐색 후 그래도 못 찾으면 선형 폴백
+        r = 0
+        while r <= max_r:
+            for ix, iy in _ring_cells(cx, cy, r):
+                for ni in self._index.get((ix, iy), ()):
+                    nlat, nlon = self.nodes[ni]
+                    d = haversine_m(lat, lon, nlat, nlon)
+                    if d < best_d:
+                        best_i, best_d = ni, d
+            # 링 r 까지 다 봤으면, 미탐색 노드는 최소 r*cell_m 이상 떨어져 있음
+            if best_i >= 0 and best_d <= r * cell_m:
+                return best_i
+            r += 1
+
+        if best_i >= 0:
+            return best_i
+        # 극단적으로 성긴 경우의 안전망(정확성 보장)
+        for ni, (nlat, nlon) in enumerate(self.nodes):
             d = haversine_m(lat, lon, nlat, nlon)
             if d < best_d:
-                best_i, best_d = i, d
+                best_i, best_d = ni, d
         return best_i
+
+
+def _ring_cells(cx: int, cy: int, r: int):
+    """중심 (cx,cy) 에서 체비셰프 거리 r 인 셀들(경계 링만)."""
+    if r == 0:
+        yield (cx, cy)
+        return
+    for ix in range(cx - r, cx + r + 1):
+        yield (ix, cy - r)
+        yield (ix, cy + r)
+    for iy in range(cy - r + 1, cy + r):
+        yield (cx - r, iy)
+        yield (cx + r, iy)
 
 
 class _GraphBuilder:

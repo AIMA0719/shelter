@@ -111,3 +111,23 @@ def test_nearest_node():
     g = parse_overpass_walk(payload)
     i = g.nearest_node(37.5, 127.0001)
     assert g.nodes[i] == (37.5, 127.0)
+
+
+def test_nearest_node_index_matches_bruteforce():
+    # 격자형 거리망(촘촘)에서 인덱스 결과 == 무차별 최근접
+    from shade_engine.geo import haversine_m
+
+    def way(pts):
+        return {"type": "way", "tags": {"highway": "footway"}, "geometry": [{"lat": la, "lon": lo} for la, lo in pts]}
+
+    elements = []
+    for r in range(12):  # 위도선
+        elements.append(way([(37.50 + r * 0.0009, 127.00 + c * 0.0011) for c in range(12)]))
+    for c in range(12):  # 경도선
+        elements.append(way([(37.50 + r * 0.0009, 127.00 + c * 0.0011) for r in range(12)]))
+    g = parse_overpass_walk({"elements": elements})
+
+    for qlat, qlon in [(37.5031, 127.0042), (37.5005, 127.0009), (37.5098, 127.0123), (37.5052, 127.0077)]:
+        idx_i = g.nearest_node(qlat, qlon)
+        brute_i = min(range(g.node_count()), key=lambda i: haversine_m(qlat, qlon, *g.nodes[i]))
+        assert g.nodes[idx_i] == g.nodes[brute_i]

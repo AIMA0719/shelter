@@ -102,6 +102,7 @@ data class RoutesResponse(
     val prefer: String,
     val routing: String, // 'osm' | 'grid'
     @SerialName("building_count") val buildingCount: Int,
+    val cached: Boolean = false,
     val weather: WeatherBadge? = null,
     val options: List<RouteOptionOut>,
 )

@@ -100,6 +100,7 @@ class RoutesResponse(BaseModel):
     prefer: RoutePreference
     routing: str  # 'osm'(실제 보행 그래프) | 'grid'(격자 프로토타입)
     building_count: int
+    cached: bool = False
     weather: WeatherBadge | None = None
     options: list[RouteOptionOut]
 

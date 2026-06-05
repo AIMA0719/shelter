@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 
@@ -33,27 +34,55 @@ def route_cache_key(
     return f"{digest}|{instant}|{mode}|{spacing_m}|{int(moving_sun)}"
 
 
+def routes_cache_key(
+    origin: LatLng,
+    dest: LatLng,
+    depart: datetime,
+    mode: str,
+    prefer: str,
+    grid_spacing_m: float,
+) -> str:
+    """경로 추천(/v1/routes) 캐시 키. 출발/도착(11m 격자) + UTC 분 + 옵션."""
+    depart_utc = (
+        depart.replace(tzinfo=timezone.utc) if depart.tzinfo is None else depart.astimezone(timezone.utc)
+    )
+    instant = depart_utc.strftime("%Y%m%dT%H%M")
+    return (
+        f"routes|{round(origin.lat, 4)},{round(origin.lon, 4)}"
+        f"|{round(dest.lat, 4)},{round(dest.lon, 4)}"
+        f"|{instant}|{mode}|{prefer}|{grid_spacing_m}"
+    )
+
+
 class LRUCache:
-    """간단한 크기 제한 LRU 캐시."""
+    """크기 제한 LRU 캐시(스레드 안전).
+
+    FastAPI 동기 핸들러는 스레드풀에서 동시 실행되므로 OrderedDict 접근을 락으로 보호한다.
+    """
 
     def __init__(self, max_entries: int = 512) -> None:
         self.max_entries = max_entries
         self._store: OrderedDict[str, object] = OrderedDict()
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> object | None:
-        if key not in self._store:
-            return None
-        self._store.move_to_end(key)
-        return self._store[key]
+        with self._lock:
+            if key not in self._store:
+                return None
+            self._store.move_to_end(key)
+            return self._store[key]
 
     def set(self, key: str, value: object) -> None:
-        self._store[key] = value
-        self._store.move_to_end(key)
-        while len(self._store) > self.max_entries:
-            self._store.popitem(last=False)
+        with self._lock:
+            self._store[key] = value
+            self._store.move_to_end(key)
+            while len(self._store) > self.max_entries:
+                self._store.popitem(last=False)
 
     def clear(self) -> None:
-        self._store.clear()
+        with self._lock:
+            self._store.clear()
 
     def __len__(self) -> int:
-        return len(self._store)
+        with self._lock:
+            return len(self._store)

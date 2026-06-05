@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from shade_engine.comfort import comfort_score
 from shade_engine.engine import compute_route_shade
+from shade_engine.geo import haversine_m
 from shade_engine.osm_graph import OsmGraph
 from shade_engine.osm_routing import RouteNotFound, plan_routes_osm
 from shade_engine.routing import plan_routes
@@ -14,7 +15,7 @@ from shade_engine.suggest import best_departure, evaluate_departures
 from shade_engine.sun import solar_position
 
 from .buildings_repo import BuildingsRepository
-from .cache import LRUCache, route_cache_key
+from .cache import LRUCache, route_cache_key, routes_cache_key
 from .config import Settings
 from .directions import DirectionsProvider
 from .models import (
@@ -37,6 +38,18 @@ from .weather import WeatherProvider, get_weather_provider
 
 _DEFAULT_SUGGEST_HOURS = [8, 10, 12, 14, 16, 18]
 _KST = timezone(timedelta(hours=9))
+
+# 폭주/오용 방지 입력 상한
+_MAX_INPUT_COORDS = 5000
+_MAX_SHADE_ROUTE_M = 50_000.0  # /v1/shade 경로 총길이 상한(50km)
+_MAX_PLAN_ROUTE_M = 30_000.0  # /v1/routes·departure-suggest 직선거리 상한(30km)
+
+
+def _polyline_length_m(coords: list[LatLng]) -> float:
+    return sum(
+        haversine_m(coords[i].lat, coords[i].lon, coords[i + 1].lat, coords[i + 1].lon)
+        for i in range(len(coords) - 1)
+    )
 
 _M_PER_DEG_LAT = 111_320.0
 
@@ -82,6 +95,10 @@ class ShadeService:
 
     def compute(self, req: ShadeRequest) -> ShadeResponse:
         coords = self._resolve_coords(req)
+        if len(coords) > _MAX_INPUT_COORDS:
+            raise ValueError(f"경로 좌표가 너무 많습니다(최대 {_MAX_INPUT_COORDS}).")
+        if _polyline_length_m(coords) > _MAX_SHADE_ROUTE_M:
+            raise ValueError("경로가 너무 깁니다(최대 50km).")
         depart = req.depart_time or datetime.now(timezone.utc)
 
         key = route_cache_key(coords, depart, req.mode, req.spacing_m, req.moving_sun)
@@ -120,7 +137,20 @@ class ShadeService:
 
     def plan_route_options(self, req: RoutesRequest) -> RoutesResponse:
         """출발→도착에 대해 최단/균형/그늘 경로 후보를 만들고 각각 그늘을 색칠한다."""
+        if (
+            haversine_m(req.origin.lat, req.origin.lon, req.destination.lat, req.destination.lon)
+            > _MAX_PLAN_ROUTE_M
+        ):
+            raise ValueError("출발-도착 거리가 너무 깁니다(최대 30km).")
         depart = req.depart_time or datetime.now(timezone.utc)
+
+        key = routes_cache_key(
+            req.origin, req.destination, depart, req.mode, req.prefer, req.grid_spacing_m
+        )
+        cached = self.cache.get(key)
+        if isinstance(cached, RoutesResponse):
+            return cached.model_copy(update={"cached": True})
+
         sun = solar_position(req.origin.lat, req.origin.lon, depart)
 
         min_lat, min_lon, max_lat, max_lon = self._bbox_with_margin([req.origin, req.destination])
@@ -182,12 +212,13 @@ class ShadeService:
                 )
             )
 
-        return RoutesResponse(
+        response = RoutesResponse(
             depart_time=depart,
             mode=req.mode,
             prefer=req.prefer,
             routing=routing,
             building_count=len(buildings),
+            cached=False,
             weather=WeatherBadge(
                 temp_c=info.temp_c,
                 uv_index=info.uv_index,
@@ -196,9 +227,16 @@ class ShadeService:
             ),
             options=options,
         )
+        self.cache.set(key, response)
+        return response
 
     def suggest_departures(self, req: DepartureSuggestRequest) -> DepartureSuggestResponse:
         """후보 출발 시각별 그늘을 평가하고 최적 시각을 추천한다."""
+        if (
+            haversine_m(req.origin.lat, req.origin.lon, req.destination.lat, req.destination.lon)
+            > _MAX_PLAN_ROUTE_M
+        ):
+            raise ValueError("출발-도착 거리가 너무 깁니다(최대 30km).")
         coords = self.provider.route(req.origin, req.destination, req.mode)
         if len(coords) < 2:
             raise ValueError("경로 탐색 결과가 비어 있습니다.")

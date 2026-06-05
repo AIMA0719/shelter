@@ -12,7 +12,7 @@ import math
 
 from .buildings import Building
 from .geo import LocalProjection, haversine_m
-from .raycast import ProjectedBuilding, is_point_shaded
+from .raycast import BuildingIndex, ProjectedBuilding
 from .routing import RouteOption
 
 _MAX_SHADOW_DISTANCE_CAP_M = 1500.0
@@ -74,15 +74,15 @@ def plan_routes_osm(
     )
 
     # 노드별 햇빛/통행가능 1회 계산(좁은 영역 → 태양 위치 거의 일정)
+    index = BuildingIndex(projected)
     n = graph.node_count()
     sunny = [False] * n
     blocked = [False] * n
     for i, (lat, lon) in enumerate(graph.nodes):
-        res = is_point_shaded(
+        res = index.is_point_shaded(
             proj.to_xy(lat, lon),
             sun_azimuth_deg,
             sun_altitude_deg,
-            projected,
             max_distance_m=max(max_dist, 20.0),
         )
         sunny[i] = not res.shaded

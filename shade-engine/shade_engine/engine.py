@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 from .buildings import Building
 from .geo import LocalProjection, haversine_m
-from .raycast import ProjectedBuilding, ShadeResult, is_point_shaded
+from .raycast import BuildingIndex, ProjectedBuilding, ShadeResult
 from .sun import solar_position
 from .trees import Tree, trees_as_buildings
 
@@ -149,6 +149,7 @@ def compute_route_shade(
     proj = LocalProjection(lat0=lat0, lon0=lon0)
     projected = _project_buildings(obstacles, proj)
     tallest = max((b.height_m for b in projected), default=0.0)
+    index = BuildingIndex(projected)  # 공간 인덱스 1회 구축 → 샘플마다 재사용
 
     out_samples: list[SamplePoint] = []
     shaded = sunny = 0
@@ -158,11 +159,10 @@ def compute_route_shade(
         sun = solar_position(lat, lon, arrival)
 
         if sun.altitude_deg <= min_altitude_deg:
-            result = is_point_shaded(
+            result = index.is_point_shaded(
                 proj.to_xy(lat, lon),
                 sun.azimuth_deg,
                 sun.altitude_deg,
-                projected,
                 min_altitude_deg=min_altitude_deg,
             )
         else:
@@ -170,11 +170,10 @@ def compute_route_shade(
             max_dist = (
                 min(_MAX_SHADOW_DISTANCE_CAP_M, tallest / tan_alt) if tan_alt > 1e-6 else _MAX_SHADOW_DISTANCE_CAP_M
             )
-            result = is_point_shaded(
+            result = index.is_point_shaded(
                 proj.to_xy(lat, lon),
                 sun.azimuth_deg,
                 sun.altitude_deg,
-                projected,
                 max_distance_m=max(max_dist, spacing_m),
                 min_altitude_deg=min_altitude_deg,
             )

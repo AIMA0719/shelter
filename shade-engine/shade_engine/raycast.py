@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from dataclasses import dataclass
 
 _EPS = 1e-9
@@ -155,3 +156,53 @@ def is_point_shaded(
         )
 
     return ShadeResult(shaded=False, reason="sunny", confidence=confidence)
+
+
+class BuildingIndex:
+    """투영된 건물의 균일 그리드 공간 인덱스.
+
+    서울 전역처럼 건물이 많을 때 한 지점의 그늘 판정을 O(전체 건물)에서
+    O(주변 건물)로 줄인다. 한 번 만들어 두고 경로의 모든 샘플/노드에 재사용한다.
+    질의는 max_distance 반경 내 셀의 건물(상위집합)만 후보로 넘기므로 결과는 동일하다.
+    """
+
+    def __init__(self, buildings: list[ProjectedBuilding], cell_size_m: float = 64.0) -> None:
+        self.cell = cell_size_m
+        self._grid: dict[tuple[int, int], list[ProjectedBuilding]] = defaultdict(list)
+        for b in buildings:
+            min_x, min_y, max_x, max_y = b.bbox()
+            for cx in range(self._c(min_x), self._c(max_x) + 1):
+                for cy in range(self._c(min_y), self._c(max_y) + 1):
+                    self._grid[(cx, cy)].append(b)
+
+    def _c(self, v: float) -> int:
+        return int(math.floor(v / self.cell))
+
+    def candidates(self, x: float, y: float, radius: float) -> list[ProjectedBuilding]:
+        seen: dict[int, ProjectedBuilding] = {}
+        for cx in range(self._c(x - radius), self._c(x + radius) + 1):
+            for cy in range(self._c(y - radius), self._c(y + radius) + 1):
+                for b in self._grid.get((cx, cy), ()):
+                    seen[id(b)] = b
+        return list(seen.values())
+
+    def is_point_shaded(
+        self,
+        point_xy: tuple[float, float],
+        sun_azimuth_deg: float,
+        sun_altitude_deg: float,
+        *,
+        max_distance_m: float = 1000.0,
+        min_altitude_deg: float = 0.5,
+    ) -> ShadeResult:
+        if sun_altitude_deg <= min_altitude_deg:
+            return ShadeResult(shaded=True, reason="sun_below", confidence=1.0)
+        cands = self.candidates(point_xy[0], point_xy[1], max_distance_m)
+        return is_point_shaded(
+            point_xy,
+            sun_azimuth_deg,
+            sun_altitude_deg,
+            cands,
+            max_distance_m=max_distance_m,
+            min_altitude_deg=min_altitude_deg,
+        )

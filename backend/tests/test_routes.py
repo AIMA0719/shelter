@@ -65,6 +65,20 @@ def test_routes_api_afternoon():
     assert by["shadiest"]["shade_percent"] >= by["shortest"]["shade_percent"]
 
 
+def test_routes_cache_hit_on_repeat():
+    svc = _service()
+    req = RoutesRequest(
+        origin=LatLng(lat=37.49750, lon=127.0270),
+        destination=LatLng(lat=37.49900, lon=127.0270),
+        depart_time=datetime(2026, 7, 15, 16, 0, tzinfo=KST),
+    )
+    first = svc.plan_route_options(req)
+    second = svc.plan_route_options(req)
+    assert first.cached is False
+    assert second.cached is True
+    assert [o.shade_percent for o in first.options] == [o.shade_percent for o in second.options]
+
+
 def test_routes_api_bike_mode():
     client = _client()
     resp = client.post(
