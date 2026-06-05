@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shelter-shade-engine"
+version = "0.1.0"
+description = "Shelter 그늘 엔진 — 태양 위치 + 건물 높이 레이캐스팅으로 경로 그늘 판정 (Phase 0)"
+requires-python = ">=3.10"
+dependencies = []  # 코어는 표준 라이브러리만 사용
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[tool.setuptools]
+packages = ["shade_engine"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
