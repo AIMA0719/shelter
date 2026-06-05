@@ -201,16 +201,21 @@ private fun DepartureSection(departure: DepartureUiResult) {
     }
 }
 
+// 겨울·햇빛 모드(prefer=sun)에서는 추천이 '햇빛 최대'이므로 햇빛(=100-그늘)으로 표기한다.
+private fun metricLabel(shadePercent: Double, preferSun: Boolean): String =
+    if (preferSun) "햇빛 ${"%.1f".format(100.0 - shadePercent)}%" else "그늘 ${shadePercent}%"
+
 @Composable
 private fun DepartureView(resp: DepartureSuggestResponse) {
+    val preferSun = resp.prefer == "sun"
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val bestHour = resp.best.departTime.substringAfter("T").take(5)
             Text("추천 출발 $bestHour", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("그늘 ${resp.best.shadePercent}%", style = MaterialTheme.typography.bodyMedium)
+            Text(metricLabel(resp.best.shadePercent, preferSun), style = MaterialTheme.typography.bodyMedium)
             resp.candidates.forEach { c ->
                 Text(
-                    "${c.departTime.substringAfter("T").take(5)} · 그늘 ${c.shadePercent}%",
+                    "${c.departTime.substringAfter("T").take(5)} · ${metricLabel(c.shadePercent, preferSun)}",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

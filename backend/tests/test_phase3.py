@@ -80,3 +80,14 @@ def test_pois_invalid_bbox():
         params={"min_lat": 37.5, "min_lon": 127.03, "max_lat": 37.49, "max_lon": 127.02},
     )
     assert resp.status_code == 422
+
+
+def test_core_endpoints_survive_missing_poi_file(tmp_path):
+    # 코덱스 회귀: POI 파일이 없어도 /health·/v1/shade 는 정상 동작해야 한다(지연 로드).
+    from app.main import build_service
+
+    set_service(None)
+    settings = Settings(pois_geojson=str(tmp_path / "does-not-exist.geojson"))
+    set_service(build_service(settings))
+    client = TestClient(create_app())
+    assert client.get("/health").status_code == 200

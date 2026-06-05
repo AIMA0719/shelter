@@ -25,7 +25,6 @@ from .models import (
     ShadeRequest,
     ShadeResponse,
 )
-from .pois_repo import GeoJSONPoisRepository
 from .shade_service import ShadeService
 
 _service: ShadeService | None = None
@@ -35,8 +34,9 @@ def build_service(settings: Settings) -> ShadeService:
     repo = GeoJSONBuildingsRepository(settings.buildings_geojson)
     provider = get_provider(settings)
     cache = LRUCache(settings.cache_max_entries)
-    pois = GeoJSONPoisRepository(settings.pois_geojson)
-    return ShadeService(repo=repo, provider=provider, settings=settings, cache=cache, pois=pois)
+    # POI 데이터는 /v1/pois 에서만 필요하므로 지연 로드(find_pois)에 맡긴다.
+    # 여기서 강제 로드하면 POI 파일 문제로 핵심 엔드포인트까지 죽는다.
+    return ShadeService(repo=repo, provider=provider, settings=settings, cache=cache)
 
 
 def get_service() -> ShadeService:
