@@ -27,6 +27,8 @@ from .models import (
 )
 from .shade_service import ShadeService
 
+import os
+
 _service: ShadeService | None = None
 
 
@@ -36,7 +38,18 @@ def build_service(settings: Settings) -> ShadeService:
     cache = LRUCache(settings.cache_max_entries)
     # POI 데이터는 /v1/pois 에서만 필요하므로 지연 로드(find_pois)에 맡긴다.
     # 여기서 강제 로드하면 POI 파일 문제로 핵심 엔드포인트까지 죽는다.
-    return ShadeService(repo=repo, provider=provider, settings=settings, cache=cache)
+
+    # 보행 네트워크가 설정·존재하면 OSM 그래프 라우팅 사용(없으면 격자 폴백).
+    walk_graph = None
+    path = settings.walk_network_geojson
+    if path and os.path.exists(path):
+        from shade_engine.osm_graph import load_geojson_network
+
+        walk_graph = load_geojson_network(path)
+
+    return ShadeService(
+        repo=repo, provider=provider, settings=settings, cache=cache, walk_graph=walk_graph
+    )
 
 
 def get_service() -> ShadeService:

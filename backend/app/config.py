@@ -25,6 +25,8 @@ class Settings:
     pois_geojson: str = os.getenv(
         "SHELTER_POIS_GEOJSON", str(_BACKEND_DIR / "data" / "sample_pois.geojson")
     )
+    # 보행 네트워크(LineString GeoJSON). 지정·존재하면 OSM 그래프 라우팅, 아니면 격자.
+    walk_network_geojson: str = os.getenv("SHELTER_WALK_NETWORK_GEOJSON", "")
     # 경로 탐색 제공자: 'straight'(오프라인) | 'kakao'
     directions_provider: str = os.getenv("SHELTER_DIRECTIONS_PROVIDER", "straight")
     kakao_rest_api_key: str | None = os.getenv("SHELTER_KAKAO_REST_API_KEY")

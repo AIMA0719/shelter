@@ -11,8 +11,8 @@
 
 | 디렉터리 | 내용 | 상태 |
 |---|---|---|
-| [`shade-engine/`](shade-engine/) | 그늘 엔진(태양위치 NOAA + 건물/가로수 레이캐스팅 + 그늘 가중 라우팅) | 테스트 41개 ✅ |
-| [`backend/`](backend/) | FastAPI 그늘 판정·경로추천·출발시간추천·POI API | 테스트 30개 ✅ |
+| [`shade-engine/`](shade-engine/) | 그늘 엔진(태양위치 NOAA + 건물/가로수 레이캐스팅 + OSM 보행 그래프 그늘 라우팅) | 테스트 49개 ✅ |
+| [`backend/`](backend/) | FastAPI 그늘 판정·경로추천·출발시간추천·POI API | 테스트 33개 ✅ |
 | [`app/`](app/) | Kotlin/Compose 안드로이드 앱 (네이버 지도 SDK) | `assembleDebug` 빌드 성공 ✅ |
 
 ## 핵심 원리
@@ -62,6 +62,7 @@ cd app && ./gradlew :app:assembleDebug :app:testDebugUnitTest
 - 지도 SDK 는 **네이버 지도**로 결정·연동 완료 — 운영 전 NCP 키 발급 + 그림자 오버레이
   약관 최종 확인 필요([app/README](app/README.md) 참고).
 - 건물 데이터는 OSM/샘플 — 서울 전역은 V-World 등으로 정제·PostGIS 적재 필요.
-- 라우팅은 격자 프로토타입 — 운영은 OSM 도로 그래프 + Valhalla 로 대체(공식 동일).
-  네이버 Directions 는 자동차 위주라 도보 경로는 OSM/Tmap 보행자로 확장.
+- 라우팅은 **OSM 보행 그래프 기반 그늘 다익스트라**를 구현(격자는 오프라인 폴백). 실제
+  권역 데이터는 `shade-engine/scripts/fetch_walk_network.py` 로 받아 `SHELTER_WALK_NETWORK_GEOJSON`
+  에 지정하면 `/v1/routes` 가 자동으로 OSM 라우팅을 쓴다. 대규모 권역은 Valhalla 로 확장 가능.
 - 기상은 stub — 기상청 API 연동 필요.

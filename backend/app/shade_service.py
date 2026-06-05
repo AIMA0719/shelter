@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 from shade_engine.comfort import comfort_score
 from shade_engine.engine import compute_route_shade
+from shade_engine.osm_graph import OsmGraph
+from shade_engine.osm_routing import plan_routes_osm
 from shade_engine.routing import plan_routes
 from shade_engine.suggest import best_departure, evaluate_departures
 from shade_engine.sun import solar_position
@@ -48,6 +50,7 @@ class ShadeService:
         cache: LRUCache | None = None,
         weather: WeatherProvider | None = None,
         pois: GeoJSONPoisRepository | None = None,
+        walk_graph: OsmGraph | None = None,
     ) -> None:
         self.repo = repo
         self.provider = provider
@@ -55,6 +58,7 @@ class ShadeService:
         self.cache = cache or LRUCache(settings.cache_max_entries)
         self.weather = weather or get_weather_provider()
         self._pois = pois
+        self.walk_graph = walk_graph
 
     def _resolve_coords(self, req: ShadeRequest) -> list[LatLng]:
         if req.coords and len(req.coords) >= 2:
@@ -124,15 +128,30 @@ class ShadeService:
 
         speed = MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"])
         info = self.weather.badge(req.origin.lat, req.origin.lon, depart)
-        raw_options = plan_routes(
-            (req.origin.lat, req.origin.lon),
-            (req.destination.lat, req.destination.lon),
-            buildings,
-            sun.azimuth_deg,
-            sun.altitude_deg,
-            grid_spacing_m=req.grid_spacing_m,
-            prefer_sun=(req.prefer == "sun"),
-        )
+
+        # 보행 그래프가 있으면 실제 OSM 경로 라우팅, 없으면 격자 프로토타입.
+        if self.walk_graph is not None and self.walk_graph.node_count() > 0:
+            routing = "osm"
+            raw_options = plan_routes_osm(
+                self.walk_graph,
+                (req.origin.lat, req.origin.lon),
+                (req.destination.lat, req.destination.lon),
+                buildings,
+                sun.azimuth_deg,
+                sun.altitude_deg,
+                prefer_sun=(req.prefer == "sun"),
+            )
+        else:
+            routing = "grid"
+            raw_options = plan_routes(
+                (req.origin.lat, req.origin.lon),
+                (req.destination.lat, req.destination.lon),
+                buildings,
+                sun.azimuth_deg,
+                sun.altitude_deg,
+                grid_spacing_m=req.grid_spacing_m,
+                prefer_sun=(req.prefer == "sun"),
+            )
 
         options: list[RouteOptionOut] = []
         for opt in raw_options:
@@ -154,6 +173,7 @@ class ShadeService:
             depart_time=depart,
             mode=req.mode,
             prefer=req.prefer,
+            routing=routing,
             building_count=len(buildings),
             weather=WeatherBadge(
                 temp_c=info.temp_c,

@@ -98,6 +98,7 @@ class RoutesResponse(BaseModel):
     depart_time: datetime
     mode: TravelMode
     prefer: RoutePreference
+    routing: str  # 'osm'(실제 보행 그래프) | 'grid'(격자 프로토타입)
     building_count: int
     weather: WeatherBadge | None = None
     options: list[RouteOptionOut]

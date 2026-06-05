@@ -14,6 +14,13 @@ from .routing import RouteOption, plan_routes
 from .trees import Tree, tree_to_building, trees_as_buildings
 from .comfort import comfort_score
 from .suggest import DepartureEvaluation, best_departure, evaluate_departures
+from .osm_graph import (
+    OsmGraph,
+    fetch_walk_network,
+    load_geojson_network,
+    parse_overpass_walk,
+)
+from .osm_routing import plan_routes_osm
 
 __all__ = [
     "LocalProjection",
@@ -39,6 +46,11 @@ __all__ = [
     "DepartureEvaluation",
     "best_departure",
     "evaluate_departures",
+    "OsmGraph",
+    "fetch_walk_network",
+    "load_geojson_network",
+    "parse_overpass_walk",
+    "plan_routes_osm",
 ]
 
 __version__ = "0.1.0"

@@ -100,6 +100,7 @@ data class RoutesResponse(
     @SerialName("depart_time") val departTime: String,
     val mode: String,
     val prefer: String,
+    val routing: String, // 'osm' | 'grid'
     @SerialName("building_count") val buildingCount: Int,
     val weather: WeatherBadge? = null,
     val options: List<RouteOptionOut>,

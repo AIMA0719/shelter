@@ -1,0 +1,48 @@
+{
+  "type": "FeatureCollection",
+  "name": "shelter-sample-walk-network",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "highway": "footway", "name": "B 거리(서쪽·그늘대)" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [127.0271, 37.49750],
+          [127.0271, 37.49800],
+          [127.0271, 37.49850],
+          [127.0271, 37.49900]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "highway": "footway", "name": "A 거리(동쪽·햇빛)" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [127.0276, 37.49750],
+          [127.0276, 37.49800],
+          [127.0276, 37.49850],
+          [127.0276, 37.49900]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "highway": "footway", "name": "하단 연결로" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[127.0271, 37.49750], [127.0276, 37.49750]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "highway": "footway", "name": "상단 연결로" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[127.0271, 37.49900], [127.0276, 37.49900]]
+      }
+    }
+  ]
+}
