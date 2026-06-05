@@ -131,3 +131,23 @@ def test_nearest_node_index_matches_bruteforce():
         idx_i = g.nearest_node(qlat, qlon)
         brute_i = min(range(g.node_count()), key=lambda i: haversine_m(qlat, qlon, *g.nodes[i]))
         assert g.nodes[idx_i] == g.nodes[brute_i]
+
+
+def test_nearest_node_sparse_matches_bruteforce():
+    # 코덱스 회귀: 성긴/멀리 떨어진 노드에서도 전수 폴백으로 진짜 최근접을 반환.
+    from shade_engine.geo import haversine_m
+
+    def way(pts):
+        return {"type": "way", "tags": {"highway": "footway"}, "geometry": [{"lat": la, "lon": lo} for la, lo in pts]}
+
+    # 수 km~수십 km 떨어진 드문 노드들
+    payload = {"elements": [
+        way([(37.50, 127.00), (37.50, 127.20)]),
+        way([(37.70, 127.05), (37.70, 127.25)]),
+        way([(37.60, 127.40), (37.61, 127.40)]),
+    ]}
+    g = parse_overpass_walk(payload)
+    for qlat, qlon in [(37.55, 127.30), (37.69, 127.24), (37.50, 127.01), (38.00, 128.00)]:
+        idx_i = g.nearest_node(qlat, qlon)
+        brute_i = min(range(g.node_count()), key=lambda i: haversine_m(qlat, qlon, *g.nodes[i]))
+        assert g.nodes[idx_i] == g.nodes[brute_i], (qlat, qlon)

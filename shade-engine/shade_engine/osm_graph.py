@@ -83,14 +83,13 @@ class OsmGraph:
                     d = haversine_m(lat, lon, nlat, nlon)
                     if d < best_d:
                         best_i, best_d = ni, d
-            # 링 r 까지 다 봤으면, 미탐색 노드는 최소 r*cell_m 이상 떨어져 있음
+            # 링 r 까지 다 봤으면 미탐색 노드는 최소 r*cell_m 이상 떨어져 있으므로,
+            # 현재 best 가 그보다 가까우면 확정(진짜 최근접).
             if best_i >= 0 and best_d <= r * cell_m:
                 return best_i
             r += 1
 
-        if best_i >= 0:
-            return best_i
-        # 극단적으로 성긴 경우의 안전망(정확성 보장)
+        # 상한(max_r)까지도 확정하지 못했으면(성긴/먼 경우) 전수 스캔으로 정확성 보장.
         for ni, (nlat, nlon) in enumerate(self.nodes):
             d = haversine_m(lat, lon, nlat, nlon)
             if d < best_d:
