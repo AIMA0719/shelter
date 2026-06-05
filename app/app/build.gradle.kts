@@ -1,8 +1,21 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
+}
+
+// 네이버 지도 NCP 키를 local.properties(NCP_KEY_ID) 또는 gradle 속성에서 읽는다.
+// 키는 저장소에 커밋하지 않는다(local.properties 는 gitignore).
+val naverNcpKeyId: String = run {
+    val props = Properties()
+    val lp = rootProject.file("local.properties")
+    if (lp.exists()) lp.inputStream().use { props.load(it) }
+    props.getProperty("NCP_KEY_ID")
+        ?: (project.findProperty("naver.ncpKeyId") as String?)
+        ?: "YOUR_NCP_KEY_ID"
 }
 
 android {
@@ -20,6 +33,9 @@ android {
         val apiBaseUrl: String = (project.findProperty("shelter.apiBaseUrl") as String?)
             ?: "http://10.0.2.2:8000/"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+
+        // 네이버 지도 SDK 가 AndroidManifest 에서 읽는 NCP 키
+        manifestPlaceholders["naverNcpKeyId"] = naverNcpKeyId
     }
 
     buildTypes {
@@ -60,6 +76,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.naver.map.compose)
 
     testImplementation(libs.junit)
 }

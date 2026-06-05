@@ -171,7 +171,7 @@ private fun ResultView(resp: ShadeResponse) {
             )
         }
     }
-    RouteCanvas(segments = resp.segments, modifier = Modifier.fillMaxWidth())
+    NaverRouteMap(segments = resp.segments, modifier = Modifier.fillMaxWidth())
 }
 
 private fun optionLabel(name: String): String = when (name) {
@@ -261,7 +261,7 @@ private fun RoutesView(resp: RoutesResponse, selected: Int, onSelect: (Int) -> U
     }
     val current = resp.options.getOrNull(selected)
     if (current != null) {
-        RouteCanvas(segments = current.segments, modifier = Modifier.fillMaxWidth())
+        NaverRouteMap(segments = current.segments, modifier = Modifier.fillMaxWidth())
     }
 }
 

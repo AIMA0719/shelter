@@ -13,7 +13,7 @@
 |---|---|---|
 | [`shade-engine/`](shade-engine/) | 그늘 엔진(태양위치 NOAA + 건물/가로수 레이캐스팅 + 그늘 가중 라우팅) | 테스트 41개 ✅ |
 | [`backend/`](backend/) | FastAPI 그늘 판정·경로추천·출발시간추천·POI API | 테스트 30개 ✅ |
-| [`app/`](app/) | Kotlin/Compose 안드로이드 앱 | `assembleDebug` 빌드 성공 ✅ |
+| [`app/`](app/) | Kotlin/Compose 안드로이드 앱 (네이버 지도 SDK) | `assembleDebug` 빌드 성공 ✅ |
 
 ## 핵심 원리
 
@@ -59,8 +59,9 @@ cd app && ./gradlew :app:assembleDebug :app:testDebugUnitTest
 
 ## 한계 / 다음 단계 (운영 전)
 
-- 지도 SDK 미정(네이버/카카오/MapLibre) — 약관(그림자 오버레이 허용) 검토 후 결정.
+- 지도 SDK 는 **네이버 지도**로 결정·연동 완료 — 운영 전 NCP 키 발급 + 그림자 오버레이
+  약관 최종 확인 필요([app/README](app/README.md) 참고).
 - 건물 데이터는 OSM/샘플 — 서울 전역은 V-World 등으로 정제·PostGIS 적재 필요.
 - 라우팅은 격자 프로토타입 — 운영은 OSM 도로 그래프 + Valhalla 로 대체(공식 동일).
-- 경로 탐색은 `straight`(오프라인) 기본 — 카카오 directions 는 키·약관 적용 후.
+  네이버 Directions 는 자동차 위주라 도보 경로는 OSM/Tmap 보행자로 확장.
 - 기상은 stub — 기상청 API 연동 필요.
