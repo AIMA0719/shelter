@@ -108,8 +108,11 @@ def plan_routes(
         min(_MAX_SHADOW_DISTANCE_CAP_M, tallest / tan_alt) if tan_alt > 1e-6 else _MAX_SHADOW_DISTANCE_CAP_M
     )
 
-    # 각 노드의 햇빛 여부를 1회 계산(좁은 영역이라 태양 위치는 거의 일정)
+    # 각 노드의 햇빛 여부 + 통행 가능 여부를 1회 계산(좁은 영역이라 태양 위치는 거의 일정).
+    # 건물 내부 노드는 통행 불가(blocked) — 그렇지 않으면 '값싼 그늘'로 오인되어
+    # 경로가 건물을 관통할 수 있다.
     sunny = [[False] * ncols for _ in range(nrows)]
+    blocked = [[False] * ncols for _ in range(nrows)]
     for r in range(nrows):
         for c in range(ncols):
             res = is_point_shaded(
@@ -120,13 +123,17 @@ def plan_routes(
                 max_distance_m=max(max_dist, spacing),
             )
             sunny[r][c] = not res.shaded
+            blocked[r][c] = res.reason == "inside_building"
 
     start = snap(ox, oy)
     goal = snap(dx, dy)
+    # 출발/도착이 건물 내부로 스냅되어도 경로가 성립하도록 통행 허용
+    blocked[start[0]][start[1]] = False
+    blocked[goal[0]][goal[1]] = False
 
     options: list[RouteOption] = []
     for name, alpha in alphas.items():
-        path_nodes = _dijkstra(start, goal, nrows, ncols, spacing, sunny, alpha)
+        path_nodes = _dijkstra(start, goal, nrows, ncols, spacing, sunny, blocked, alpha)
         coords = [proj.to_latlon(*node_xy(r, c)) for r, c in path_nodes]
         # 정확한 출발/도착 좌표로 끝점 치환(격자 스냅 오차 보정)
         if coords:
@@ -155,9 +162,13 @@ def _dijkstra(
     ncols: int,
     spacing: float,
     sunny: list[list[bool]],
+    blocked: list[list[bool]],
     alpha: float,
 ) -> list[tuple[int, int]]:
-    """엣지비용 = 거리 × (1 + α · 엣지햇빛비율) 다익스트라. 경로 노드열 반환."""
+    """엣지비용 = 거리 × (1 + α · 엣지햇빛비율) 다익스트라. 경로 노드열 반환.
+
+    blocked 노드(건물 내부)는 통행하지 않는다.
+    """
     def idx(r: int, c: int) -> int:
         return r * ncols + c
 
@@ -177,6 +188,8 @@ def _dijkstra(
             nr, nc = r + dr, c + dc
             if not (0 <= nr < nrows and 0 <= nc < ncols):
                 continue
+            if blocked[nr][nc]:
+                continue  # 건물 내부 통행 불가
             step = spacing * (math.sqrt(2) if dr and dc else 1.0)
             # 엣지 햇빛비율 = 양 끝 노드 평균
             edge_sun = (int(sunny[r][c]) + int(sunny[nr][nc])) / 2.0

@@ -11,8 +11,9 @@ def test_dijkstra_detours_around_sun():
     # 3x3 격자, 중앙(1,1)만 햇빛. 최단경로는 대각선으로 중앙을 지나지만,
     # 그늘 최적(alpha 큼)은 중앙을 우회해야 한다.
     sunny = [[False, False, False], [False, True, False], [False, False, False]]
-    shortest = _dijkstra((0, 0), (2, 2), 3, 3, 1.0, sunny, alpha=0.0)
-    shadiest = _dijkstra((0, 0), (2, 2), 3, 3, 1.0, sunny, alpha=50.0)
+    free = [[False, False, False], [False, False, False], [False, False, False]]
+    shortest = _dijkstra((0, 0), (2, 2), 3, 3, 1.0, sunny, free, alpha=0.0)
+    shadiest = _dijkstra((0, 0), (2, 2), 3, 3, 1.0, sunny, free, alpha=50.0)
 
     assert shortest[0] == (0, 0) and shortest[-1] == (2, 2)
     assert (1, 1) in shortest  # 최단은 햇빛 중앙을 통과
@@ -60,3 +61,27 @@ def test_plan_routes_prefers_shade_when_detour_helps():
     by_name = {o.name: o for o in options}
     # 그늘 최적 경로의 그늘 비율이 최단보다 작지 않아야 한다.
     assert by_name["shadiest"].shade_percent >= by_name["shortest"].shade_percent
+
+
+def test_routes_do_not_cross_building():
+    # 코덱스 회귀: 건물 내부를 통과하는 경로가 나오면 안 된다.
+    from shade_engine.buildings import Building
+
+    # 출발(서)~도착(동) 사이를 가로막는 건물(위도 37.4995~37.5005)
+    bld = Building(
+        ring=(
+            (37.4995, 127.0000),
+            (37.4995, 127.0010),
+            (37.5005, 127.0010),
+            (37.5005, 127.0000),
+        ),
+        height_m=40.0,
+    )
+    origin = (37.5000, 126.9990)
+    dest = (37.5000, 127.0020)
+    options = plan_routes(origin, dest, [bld], 270.0, 45.0, grid_spacing_m=15.0)
+
+    for o in options:
+        for lat, lon in o.coords:
+            inside = 37.4995 < lat < 37.5005 and 127.0000 < lon < 127.0010
+            assert not inside, f"{o.name} 경로가 건물 내부 통과: {(lat, lon)}"
