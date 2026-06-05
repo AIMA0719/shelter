@@ -12,6 +12,8 @@ from .raycast import ShadeResult, is_point_shaded
 from .engine import RouteShade, SamplePoint, compute_route_shade, sample_polyline
 from .routing import RouteOption, plan_routes
 from .trees import Tree, tree_to_building, trees_as_buildings
+from .comfort import comfort_score
+from .suggest import DepartureEvaluation, best_departure, evaluate_departures
 
 __all__ = [
     "LocalProjection",
@@ -33,6 +35,10 @@ __all__ = [
     "Tree",
     "tree_to_building",
     "trees_as_buildings",
+    "comfort_score",
+    "DepartureEvaluation",
+    "best_departure",
+    "evaluate_departures",
 ]
 
 __version__ = "0.1.0"

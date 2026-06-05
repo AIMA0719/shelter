@@ -71,6 +71,9 @@ class WeatherBadge(BaseModel):
     source: str
 
 
+RoutePreference = Literal["shade", "sun"]  # shade=여름(기본), sun=겨울 햇빛 모드
+
+
 class RoutesRequest(BaseModel):
     """경로 추천: 출발/도착 필수(격자 라우팅)."""
 
@@ -79,12 +82,14 @@ class RoutesRequest(BaseModel):
     depart_time: datetime | None = None
     mode: TravelMode = "walk"
     grid_spacing_m: float = Field(default=20.0, gt=2, le=100)
+    prefer: RoutePreference = "shade"
 
 
 class RouteOptionOut(BaseModel):
-    name: str  # 'shortest' | 'balanced' | 'shadiest'
+    name: str  # 'shortest' | 'balanced' | 'shadiest' | 'sunniest'
     distance_m: float
     shade_percent: float
+    comfort: float
     coords: list[LatLng]
     segments: list[SegmentOut]
 
@@ -92,9 +97,41 @@ class RouteOptionOut(BaseModel):
 class RoutesResponse(BaseModel):
     depart_time: datetime
     mode: TravelMode
+    prefer: RoutePreference
     building_count: int
     weather: WeatherBadge | None = None
     options: list[RouteOptionOut]
+
+
+class DepartureSuggestRequest(BaseModel):
+    origin: LatLng
+    destination: LatLng
+    date: str | None = Field(default=None, description="YYYY-MM-DD (미지정 시 오늘)")
+    hours: list[int] | None = Field(default=None, description="후보 출발 시(0~23). 기본 8~18")
+    mode: TravelMode = "walk"
+    prefer: RoutePreference = "shade"
+
+
+class DepartureCandidateOut(BaseModel):
+    depart_time: datetime
+    shade_percent: float
+
+
+class DepartureSuggestResponse(BaseModel):
+    best: DepartureCandidateOut
+    prefer: RoutePreference
+    candidates: list[DepartureCandidateOut]
+
+
+class Poi(BaseModel):
+    lat: float
+    lon: float
+    type: str  # 'shade_shelter' | 'cooling_center' | 'water_fountain'
+    name: str | None = None
+
+
+class PoisResponse(BaseModel):
+    pois: list[Poi]
 
 
 class HealthResponse(BaseModel):

@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
@@ -16,12 +16,16 @@ from .cache import LRUCache
 from .config import Settings
 from .directions import get_provider
 from .models import (
+    DepartureSuggestRequest,
+    DepartureSuggestResponse,
     HealthResponse,
+    PoisResponse,
     RoutesRequest,
     RoutesResponse,
     ShadeRequest,
     ShadeResponse,
 )
+from .pois_repo import GeoJSONPoisRepository
 from .shade_service import ShadeService
 
 _service: ShadeService | None = None
@@ -31,7 +35,8 @@ def build_service(settings: Settings) -> ShadeService:
     repo = GeoJSONBuildingsRepository(settings.buildings_geojson)
     provider = get_provider(settings)
     cache = LRUCache(settings.cache_max_entries)
-    return ShadeService(repo=repo, provider=provider, settings=settings, cache=cache)
+    pois = GeoJSONPoisRepository(settings.pois_geojson)
+    return ShadeService(repo=repo, provider=provider, settings=settings, cache=cache, pois=pois)
 
 
 def get_service() -> ShadeService:
@@ -85,6 +90,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return svc.plan_route_options(req)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/v1/departure-suggest", response_model=DepartureSuggestResponse)
+    def departure_suggest(req: DepartureSuggestRequest) -> DepartureSuggestResponse:
+        svc = get_service()
+        try:
+            return svc.suggest_departures(req)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/v1/pois", response_model=PoisResponse)
+    def pois(
+        min_lat: float = Query(...),
+        min_lon: float = Query(...),
+        max_lat: float = Query(...),
+        max_lon: float = Query(...),
+    ) -> PoisResponse:
+        svc = get_service()
+        if min_lat > max_lat or min_lon > max_lon:
+            raise HTTPException(status_code=422, detail="bbox 의 min 이 max 보다 큽니다.")
+        return PoisResponse(pois=svc.find_pois(min_lat, min_lon, max_lat, max_lon))
 
     app.state.get_service = get_service  # 테스트에서 접근/오버라이드용
     return app

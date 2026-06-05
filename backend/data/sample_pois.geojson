@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "name": "shelter-sample-pois",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "type": "shade_shelter", "name": "강남대로 그늘막 A" },
+      "geometry": { "type": "Point", "coordinates": [127.02710, 37.49780] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "type": "cooling_center", "name": "역삼 무더위쉼터" },
+      "geometry": { "type": "Point", "coordinates": [127.02740, 37.49850] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "type": "water_fountain", "name": "음수대 1" },
+      "geometry": { "type": "Point", "coordinates": [127.02680, 37.49880] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "type": "shade_shelter", "name": "먼 그늘막(범위 밖)" },
+      "geometry": { "type": "Point", "coordinates": [127.05000, 37.51000] }
+    }
+  ]
+}

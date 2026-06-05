@@ -38,6 +38,43 @@ data class RoutesRequest(
     @SerialName("depart_time") val departTime: String? = null,
     val mode: String = "walk",
     @SerialName("grid_spacing_m") val gridSpacingM: Double = 20.0,
+    val prefer: String = "shade", // shade=여름, sun=겨울 햇빛 모드
+)
+
+@Serializable
+data class DepartureSuggestRequest(
+    val origin: LatLng,
+    val destination: LatLng,
+    val date: String? = null,
+    val hours: List<Int>? = null,
+    val mode: String = "walk",
+    val prefer: String = "shade",
+)
+
+@Serializable
+data class DepartureCandidateOut(
+    @SerialName("depart_time") val departTime: String,
+    @SerialName("shade_percent") val shadePercent: Double,
+)
+
+@Serializable
+data class DepartureSuggestResponse(
+    val best: DepartureCandidateOut,
+    val prefer: String,
+    val candidates: List<DepartureCandidateOut>,
+)
+
+@Serializable
+data class Poi(
+    val lat: Double,
+    val lon: Double,
+    val type: String,
+    val name: String? = null,
+)
+
+@Serializable
+data class PoisResponse(
+    val pois: List<Poi>,
 )
 
 @Serializable
@@ -53,6 +90,7 @@ data class RouteOptionOut(
     val name: String,
     @SerialName("distance_m") val distanceM: Double,
     @SerialName("shade_percent") val shadePercent: Double,
+    val comfort: Double,
     val coords: List<LatLng>,
     val segments: List<SegmentOut>,
 )
@@ -61,6 +99,7 @@ data class RouteOptionOut(
 data class RoutesResponse(
     @SerialName("depart_time") val departTime: String,
     val mode: String,
+    val prefer: String,
     @SerialName("building_count") val buildingCount: Int,
     val weather: WeatherBadge? = null,
     val options: List<RouteOptionOut>,

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from shade_engine.comfort import comfort_score
 from shade_engine.engine import compute_route_shade
 from shade_engine.routing import plan_routes
+from shade_engine.suggest import best_departure, evaluate_departures
 from shade_engine.sun import solar_position
 
 from .buildings_repo import BuildingsRepository
@@ -15,7 +17,11 @@ from .config import Settings
 from .directions import DirectionsProvider
 from .models import (
     MODE_SPEED_MPS,
+    DepartureCandidateOut,
+    DepartureSuggestRequest,
+    DepartureSuggestResponse,
     LatLng,
+    Poi,
     RouteOptionOut,
     RoutesRequest,
     RoutesResponse,
@@ -24,7 +30,11 @@ from .models import (
     ShadeResponse,
     WeatherBadge,
 )
+from .pois_repo import GeoJSONPoisRepository
 from .weather import WeatherProvider, get_weather_provider
+
+_DEFAULT_SUGGEST_HOURS = [8, 10, 12, 14, 16, 18]
+_KST = timezone(timedelta(hours=9))
 
 _M_PER_DEG_LAT = 111_320.0
 
@@ -37,12 +47,14 @@ class ShadeService:
         settings: Settings,
         cache: LRUCache | None = None,
         weather: WeatherProvider | None = None,
+        pois: GeoJSONPoisRepository | None = None,
     ) -> None:
         self.repo = repo
         self.provider = provider
         self.settings = settings
         self.cache = cache or LRUCache(settings.cache_max_entries)
         self.weather = weather or get_weather_provider()
+        self._pois = pois
 
     def _resolve_coords(self, req: ShadeRequest) -> list[LatLng]:
         if req.coords and len(req.coords) >= 2:
@@ -111,6 +123,7 @@ class ShadeService:
         buildings = self.repo.query_bbox(min_lat, min_lon, max_lat, max_lon)
 
         speed = MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"])
+        info = self.weather.badge(req.origin.lat, req.origin.lon, depart)
         raw_options = plan_routes(
             (req.origin.lat, req.origin.lon),
             (req.destination.lat, req.destination.lon),
@@ -118,6 +131,7 @@ class ShadeService:
             sun.azimuth_deg,
             sun.altitude_deg,
             grid_spacing_m=req.grid_spacing_m,
+            prefer_sun=(req.prefer == "sun"),
         )
 
         options: list[RouteOptionOut] = []
@@ -130,15 +144,16 @@ class ShadeService:
                     name=opt.name,
                     distance_m=round(opt.distance_m, 1),
                     shade_percent=shade.shade_percent,
+                    comfort=comfort_score(shade.shade_fraction, info.temp_c, info.uv_index),
                     coords=[LatLng(lat=la, lon=lo) for la, lo in opt.coords],
                     segments=_segments_from_shade(shade),
                 )
             )
 
-        info = self.weather.badge(req.origin.lat, req.origin.lon, depart)
         return RoutesResponse(
             depart_time=depart,
             mode=req.mode,
+            prefer=req.prefer,
             building_count=len(buildings),
             weather=WeatherBadge(
                 temp_c=info.temp_c,
@@ -148,6 +163,49 @@ class ShadeService:
             ),
             options=options,
         )
+
+    def suggest_departures(self, req: DepartureSuggestRequest) -> DepartureSuggestResponse:
+        """후보 출발 시각별 그늘을 평가하고 최적 시각을 추천한다."""
+        coords = self.provider.route(req.origin, req.destination, req.mode)
+        if len(coords) < 2:
+            raise ValueError("경로 탐색 결과가 비어 있습니다.")
+
+        if req.date:
+            try:
+                y, m, d = (int(x) for x in req.date.split("-"))
+            except ValueError as exc:
+                raise ValueError("date 형식은 YYYY-MM-DD 여야 합니다.") from exc
+        else:
+            today = datetime.now(_KST)
+            y, m, d = today.year, today.month, today.day
+
+        hours = req.hours or _DEFAULT_SUGGEST_HOURS
+        candidates = [datetime(y, m, d, h, 0, tzinfo=_KST) for h in hours]
+
+        min_lat, min_lon, max_lat, max_lon = self._bbox_with_margin(coords)
+        buildings = self.repo.query_bbox(min_lat, min_lon, max_lat, max_lon)
+        speed = MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"])
+
+        evals = evaluate_departures(
+            [(c.lat, c.lon) for c in coords], candidates, buildings, walk_speed_mps=speed
+        )
+        best = best_departure(evals, prefer_sun=(req.prefer == "sun"))
+        assert best is not None  # candidates 비어있지 않음
+        return DepartureSuggestResponse(
+            best=DepartureCandidateOut(depart_time=best.depart, shade_percent=best.shade_percent),
+            prefer=req.prefer,
+            candidates=[
+                DepartureCandidateOut(depart_time=e.depart, shade_percent=e.shade_percent)
+                for e in evals
+            ],
+        )
+
+    def find_pois(
+        self, min_lat: float, min_lon: float, max_lat: float, max_lon: float
+    ) -> list[Poi]:
+        if self._pois is None:
+            self._pois = GeoJSONPoisRepository(self.settings.pois_geojson)
+        return self._pois.query_bbox(min_lat, min_lon, max_lat, max_lon)
 
 
 def _segments_from_shade(route_shade) -> list[SegmentOut]:

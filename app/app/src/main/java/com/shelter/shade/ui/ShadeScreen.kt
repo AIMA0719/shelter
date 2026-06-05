@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shelter.shade.data.DepartureSuggestResponse
 import com.shelter.shade.data.RouteOptionOut
 import com.shelter.shade.data.RoutesResponse
 import com.shelter.shade.data.ShadeResponse
@@ -97,6 +98,19 @@ fun ShadeScreen(viewModel: ShadeViewModel, modifier: Modifier = Modifier) {
             )
         }
 
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = state.prefer == "shade",
+                onClick = { viewModel.onPrefer("shade") },
+                label = { Text("여름·그늘") },
+            )
+            FilterChip(
+                selected = state.prefer == "sun",
+                onClick = { viewModel.onPrefer("sun") },
+                label = { Text("겨울·햇빛") },
+            )
+        }
+
         Button(
             onClick = viewModel::computeShade,
             modifier = Modifier.fillMaxWidth(),
@@ -113,6 +127,15 @@ fun ShadeScreen(viewModel: ShadeViewModel, modifier: Modifier = Modifier) {
             Text("경로 추천 (최단·균형·그늘 비교)")
         }
 
+        OutlinedButton(
+            onClick = viewModel::suggestDeparture,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.departure !is DepartureUiResult.Loading,
+        ) {
+            Text("출발 시간 추천")
+        }
+
+        DepartureSection(state.departure)
         RoutesSection(state.routes, state.selectedOption, viewModel::selectOption)
 
         when (val r = state.result) {
@@ -155,7 +178,44 @@ private fun optionLabel(name: String): String = when (name) {
     "shortest" -> "최단"
     "balanced" -> "균형"
     "shadiest" -> "그늘 최적"
+    "sunniest" -> "햇빛 최적"
     else -> name
+}
+
+@Composable
+private fun DepartureSection(departure: DepartureUiResult) {
+    when (departure) {
+        is DepartureUiResult.Idle -> Unit
+        is DepartureUiResult.Loading -> Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) { CircularProgressIndicator() }
+        is DepartureUiResult.Error -> Card(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "오류: ${departure.message}",
+                modifier = Modifier.padding(16.dp),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        is DepartureUiResult.Success -> DepartureView(departure.response)
+    }
+}
+
+@Composable
+private fun DepartureView(resp: DepartureSuggestResponse) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val bestHour = resp.best.departTime.substringAfter("T").take(5)
+            Text("추천 출발 $bestHour", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("그늘 ${resp.best.shadePercent}%", style = MaterialTheme.typography.bodyMedium)
+            resp.candidates.forEach { c ->
+                Text(
+                    "${c.departTime.substringAfter("T").take(5)} · 그늘 ${c.shadePercent}%",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -220,7 +280,7 @@ private fun OptionCard(
                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
             Text("그늘 ${option.shadePercent}%", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("${option.distanceM.toInt()} m", style = MaterialTheme.typography.bodySmall)
+            Text("${option.distanceM.toInt()} m · 쾌적 ${option.comfort.toInt()}", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
                 Text(if (selected) "선택됨" else "선택")
             }

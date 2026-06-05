@@ -63,13 +63,17 @@ def plan_routes(
     margin_m: float = 150.0,
     max_nodes: int = 6000,
     alphas: dict[str, float] | None = None,
+    prefer_sun: bool = False,
 ) -> list[RouteOption]:
-    """origin→dest 의 최단/균형/그늘 경로 후보를 만든다.
+    """origin→dest 의 최단/균형/그늘(또는 햇빛) 경로 후보를 만든다.
 
     grid_spacing_m 간격의 8방향 격자에서 알파별 다익스트라를 돌린다. 격자가 너무
-    커지면(max_nodes 초과) 간격을 자동으로 키워 노드 수를 제한한다.
+    커지면(max_nodes 초과) 간격을 자동으로 키워 노드 수를 제한한다. prefer_sun=True
+    (겨울 모드)면 그늘 대신 햇빛을 최대화한다.
     """
-    alphas = alphas or {"shortest": 0.0, "balanced": 3.0, "shadiest": 12.0}
+    if alphas is None:
+        third = "sunniest" if prefer_sun else "shadiest"
+        alphas = {"shortest": 0.0, "balanced": 3.0, third: 12.0}
 
     (lat0, lon0), (lat1, lon1) = origin, dest
     min_lat, max_lat = sorted((lat0, lat1))
@@ -131,9 +135,14 @@ def plan_routes(
     blocked[start[0]][start[1]] = False
     blocked[goal[0]][goal[1]] = False
 
+    # 회피 대상: 여름은 햇빛, 겨울(prefer_sun)은 그늘
+    avoid = (
+        [[not sunny[r][c] for c in range(ncols)] for r in range(nrows)] if prefer_sun else sunny
+    )
+
     options: list[RouteOption] = []
     for name, alpha in alphas.items():
-        path_nodes = _dijkstra(start, goal, nrows, ncols, spacing, sunny, blocked, alpha)
+        path_nodes = _dijkstra(start, goal, nrows, ncols, spacing, avoid, blocked, alpha)
         coords = [proj.to_latlon(*node_xy(r, c)) for r, c in path_nodes]
         # 정확한 출발/도착 좌표로 끝점 치환(격자 스냅 오차 보정)
         if coords:
@@ -161,13 +170,13 @@ def _dijkstra(
     nrows: int,
     ncols: int,
     spacing: float,
-    sunny: list[list[bool]],
+    avoid: list[list[bool]],
     blocked: list[list[bool]],
     alpha: float,
 ) -> list[tuple[int, int]]:
-    """엣지비용 = 거리 × (1 + α · 엣지햇빛비율) 다익스트라. 경로 노드열 반환.
+    """엣지비용 = 거리 × (1 + α · 엣지회피비율) 다익스트라. 경로 노드열 반환.
 
-    blocked 노드(건물 내부)는 통행하지 않는다.
+    avoid 는 회피 대상(여름=햇빛, 겨울=그늘) 노드. blocked 노드(건물 내부)는 통행 불가.
     """
     def idx(r: int, c: int) -> int:
         return r * ncols + c
@@ -191,9 +200,9 @@ def _dijkstra(
             if blocked[nr][nc]:
                 continue  # 건물 내부 통행 불가
             step = spacing * (math.sqrt(2) if dr and dc else 1.0)
-            # 엣지 햇빛비율 = 양 끝 노드 평균
-            edge_sun = (int(sunny[r][c]) + int(sunny[nr][nc])) / 2.0
-            cost = step * (1.0 + alpha * edge_sun)
+            # 엣지 회피비율 = 양 끝 노드 평균
+            edge_avoid = (int(avoid[r][c]) + int(avoid[nr][nc])) / 2.0
+            cost = step * (1.0 + alpha * edge_avoid)
             nd = d + cost
             if nd < dist[idx(nr, nc)]:
                 dist[idx(nr, nc)] = nd

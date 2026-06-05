@@ -23,6 +23,7 @@ class ShadeRepository(private val api: ShadeApi = NetworkModule.shadeApi) {
         destination: LatLng,
         departTimeIso: String,
         mode: String = "walk",
+        prefer: String = "shade",
     ): RoutesResponse =
         api.planRoutes(
             RoutesRequest(
@@ -30,6 +31,22 @@ class ShadeRepository(private val api: ShadeApi = NetworkModule.shadeApi) {
                 destination = destination,
                 departTime = departTimeIso,
                 mode = mode,
+                prefer = prefer,
+            )
+        )
+
+    suspend fun suggestDeparture(
+        origin: LatLng,
+        destination: LatLng,
+        mode: String = "walk",
+        prefer: String = "shade",
+    ): DepartureSuggestResponse =
+        api.suggestDeparture(
+            DepartureSuggestRequest(
+                origin = origin,
+                destination = destination,
+                mode = mode,
+                prefer = prefer,
             )
         )
 }

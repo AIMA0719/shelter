@@ -22,6 +22,9 @@ class Settings:
     buildings_geojson: str = os.getenv(
         "SHELTER_BUILDINGS_GEOJSON", str(_BACKEND_DIR / "data" / "sample_buildings.geojson")
     )
+    pois_geojson: str = os.getenv(
+        "SHELTER_POIS_GEOJSON", str(_BACKEND_DIR / "data" / "sample_pois.geojson")
+    )
     # 경로 탐색 제공자: 'straight'(오프라인) | 'kakao'
     directions_provider: str = os.getenv("SHELTER_DIRECTIONS_PROVIDER", "straight")
     kakao_rest_api_key: str | None = os.getenv("SHELTER_KAKAO_REST_API_KEY")

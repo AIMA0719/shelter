@@ -63,6 +63,22 @@ def test_plan_routes_prefers_shade_when_detour_helps():
     assert by_name["shadiest"].shade_percent >= by_name["shortest"].shade_percent
 
 
+def test_prefer_sun_renames_and_seeks_sun():
+    # 겨울 모드: 그늘 대신 햇빛을 최대화. 옵션명에 'sunniest' 등장.
+    sunny = [[False, False, False], [False, True, False], [False, False, False]]
+    free = [[False] * 3 for _ in range(3)]
+    # avoid=그늘(=not sunny)일 때, 햇빛(1,1)을 '지나가는' 경로가 유리해야 함
+    avoid_shade = [[not sunny[r][c] for c in range(3)] for r in range(3)]
+    path = _dijkstra((0, 0), (2, 2), 3, 3, 1.0, avoid_shade, free, alpha=50.0)
+    assert (1, 1) in path  # 햇빛 노드를 통과(겨울엔 햇빛이 이득)
+
+    route, buildings = synthetic_scene()
+    options = plan_routes(
+        route[0], route[-1], buildings, 264.0, 44.0, grid_spacing_m=20.0, prefer_sun=True
+    )
+    assert "sunniest" in {o.name for o in options}
+
+
 def test_routes_do_not_cross_building():
     # 코덱스 회귀: 건물 내부를 통과하는 경로가 나오면 안 된다.
     from shade_engine.buildings import Building
