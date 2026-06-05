@@ -9,6 +9,7 @@ import com.shelter.shade.data.PlaceResult
 import com.shelter.shade.data.PlaceSearch
 import com.shelter.shade.data.RoutesResponse
 import com.shelter.shade.engine.LocalShadeEngine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -70,6 +71,7 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val engine: LocalShadeEngine by lazy { LocalShadeEngine.get(getApplication()) }
     private var searchJob: Job? = null
+    private var planJob: Job? = null
 
     // --- 지점 지정(지도 탭) ---
     fun onMapTap(lat: Double, lon: Double) {
@@ -108,11 +110,15 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(searchResults = emptyList(), searching = false) }
             return
         }
+        val target = _state.value.searchTarget
         searchJob = viewModelScope.launch {
             delay(250) // 디바운스
             _state.update { it.copy(searching = true) }
             val results = runCatching { PlaceSearch.search(q, GANGNAM_VIEWBOX) }.getOrDefault(emptyList())
-            _state.update { it.copy(searchResults = results, searching = false) }
+            // 응답이 도착했을 때도 여전히 같은 쿼리/대상일 때만 반영(오래된 응답 무시)
+            _state.update {
+                if (it.searchQuery == q && it.searchTarget == target) it.copy(searchResults = results, searching = false) else it
+            }
         }
     }
 
@@ -162,21 +168,21 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _state.update { it.copy(routes = RoutesUiResult.Loading, selectedOption = 0) }
-        viewModelScope.launch {
-            val r = runCatching {
+        // 직전 계산을 취소 — 슬라이더/토글 연타 시 오래된 결과가 최신을 덮어쓰지 않게.
+        planJob?.cancel()
+        planJob = viewModelScope.launch {
+            val resp = try {
                 val odt = departOdt(s.departHour)
                 withContext(Dispatchers.Default) {
                     engine.planRoutes(origin, dest, odt.toInstant().toEpochMilli(), odt.toString(), s.mode, s.prefer)
                 }
+            } catch (c: CancellationException) {
+                throw c // 취소는 전파(상태를 건드리지 않음)
+            } catch (e: Exception) {
+                _state.update { it.copy(routes = RoutesUiResult.Error(e.message ?: "계산 실패")) }
+                return@launch
             }
-            _state.update {
-                it.copy(
-                    routes = r.fold(
-                        onSuccess = { resp -> RoutesUiResult.Success(resp) },
-                        onFailure = { e -> RoutesUiResult.Error(e.message ?: "계산 실패") },
-                    )
-                )
-            }
+            _state.update { it.copy(routes = RoutesUiResult.Success(resp)) }
         }
     }
 
