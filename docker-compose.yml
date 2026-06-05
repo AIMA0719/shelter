@@ -3,12 +3,10 @@
 # Usage:
 #   docker compose up -d
 #
-# First-run DB initialisation (run once after postgis is healthy):
-#   docker compose exec postgis psql -U shelter -d shelter \
-#       -c "$(cat backend/app/db/schema.sql)"
-#
-# To ingest building / POI data, run your ingest script with SHELTER_DB_DSN set
-# to postgresql://shelter:shelter@localhost:5432/shelter.
+# DB schema is applied automatically on first init (schema.sql is mounted into
+# the postgis /docker-entrypoint-initdb.d). After the stack is up, ingest data:
+#   python -m app.db.ingest --dsn postgresql://shelter:shelter@localhost:5432/shelter \
+#       --buildings data/<area>_buildings.geojson --pois data/sample_pois.geojson
 
 version: "3.9"
 
@@ -22,6 +20,8 @@ services:
       POSTGRES_DB: shelter
     volumes:
       - postgis_data:/var/lib/postgresql/data
+      # 최초 init 시 스키마 자동 적용(빈 데이터 디렉터리일 때만 실행됨)
+      - ./backend/app/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     ports:
       - "5432:5432"
     healthcheck:

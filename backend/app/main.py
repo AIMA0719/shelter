@@ -97,12 +97,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    limiter = RateLimiter((settings or Settings()).rate_limit_per_min)
+    _settings = settings or Settings()
+    limiter = RateLimiter(_settings.rate_limit_per_min)
+    trust_proxy = _settings.trust_proxy
+
+    def _client_key(request) -> str:  # type: ignore[no-untyped-def]
+        # 신뢰 프록시 뒤에서는 X-Forwarded-For 의 첫 IP(원 클라이언트)를 사용.
+        if trust_proxy:
+            xff = request.headers.get("x-forwarded-for")
+            if xff:
+                return xff.split(",")[0].strip()
+        return request.client.host if request.client else "?"
 
     @app.middleware("http")
     async def _rate_limit(request, call_next):  # type: ignore[no-untyped-def]
-        client_ip = request.client.host if request.client else "?"
-        if not limiter.allow(client_ip, time.monotonic()):
+        if not limiter.allow(_client_key(request), time.monotonic()):
             return JSONResponse(status_code=429, content={"detail": "요청이 너무 많습니다."})
         return await call_next(request)
 

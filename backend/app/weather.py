@@ -144,10 +144,20 @@ class KMAWeatherProvider:
         self._stub = StubWeatherProvider()
 
     def badge(self, lat: float, lon: float, dt: datetime) -> WeatherInfo:
+        # 초단기실황은 '관측'이라 현재 시각대만 유효하다. 미래/먼 과거 출발시각은
+        # 관측이 없어 temp=null 이 되므로, 그 경우 계절/시각 추정 stub 으로 폴백한다.
+        dt_utc = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        delta = (dt_utc - datetime.now(timezone.utc)).total_seconds()
+        if delta > 900 or delta < -7200:  # 미래 15분 초과 또는 과거 2시간 초과
+            return self._stub.badge(lat, lon, dt)
         try:
-            return self._fetch(lat, lon, dt)
+            info = self._fetch(lat, lon, dt)
         except Exception:  # noqa: BLE001
             return self._stub.badge(lat, lon, dt)
+        # 관측값이 없으면(temp 없음) stub 으로 폴백 — null 배지 반환 금지.
+        if info.temp_c is None:
+            return self._stub.badge(lat, lon, dt)
+        return info
 
     def _fetch(self, lat: float, lon: float, dt: datetime) -> WeatherInfo:
         nx, ny = latlon_to_grid(lat, lon)

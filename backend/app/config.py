@@ -33,6 +33,8 @@ class Settings:
     kma_service_key: str = os.getenv("SHELTER_KMA_SERVICE_KEY", "")
     # IP 당 분당 요청 한도(0 이면 비활성). 운영 폭주 방지.
     rate_limit_per_min: int = int(os.getenv("SHELTER_RATE_LIMIT_PER_MIN", "600"))
+    # 신뢰된 리버스 프록시 뒤에 있으면 X-Forwarded-For 로 실제 클라이언트 IP 추출.
+    trust_proxy: bool = os.getenv("SHELTER_TRUST_PROXY", "").lower() in {"1", "true", "yes"}
     # 경로 탐색 제공자: 'straight'(오프라인) | 'kakao'
     directions_provider: str = os.getenv("SHELTER_DIRECTIONS_PROVIDER", "straight")
     kakao_rest_api_key: str | None = os.getenv("SHELTER_KAKAO_REST_API_KEY")
