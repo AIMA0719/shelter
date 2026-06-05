@@ -1,0 +1,62 @@
+{
+  "type": "FeatureCollection",
+  "name": "shelter-sample-gangnam",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": "w1", "building": "yes", "height": "50" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [127.02655, 37.49745],
+          [127.02690, 37.49745],
+          [127.02690, 37.49795],
+          [127.02655, 37.49795],
+          [127.02655, 37.49745]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "w2", "building": "yes", "height": "50" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [127.02655, 37.49800],
+          [127.02690, 37.49800],
+          [127.02690, 37.49850],
+          [127.02655, 37.49850],
+          [127.02655, 37.49800]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "w3", "building": "yes", "height": "50" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [127.02655, 37.49855],
+          [127.02690, 37.49855],
+          [127.02690, 37.49905],
+          [127.02655, 37.49905],
+          [127.02655, 37.49855]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "e1", "building": "residential", "building:levels": "2" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [127.02720, 37.49800],
+          [127.02745, 37.49800],
+          [127.02745, 37.49850],
+          [127.02720, 37.49850],
+          [127.02720, 37.49800]
+        ]]
+      }
+    }
+  ]
+}

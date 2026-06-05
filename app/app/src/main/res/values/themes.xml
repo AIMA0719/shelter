@@ -1,0 +1,4 @@
+<resources>
+    <!-- Compose 가 실제 테마를 그리지만, 런처/스플래시용 베이스 테마가 필요하다 -->
+    <style name="Theme.Shelter" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
