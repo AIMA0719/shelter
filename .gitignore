@@ -1,0 +1,17 @@
+# IDE
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build / deps (추후 스택 확정 시 보강)
+build/
+node_modules/
+.gradle/
+*.iml
+__pycache__/
+.venv/
+venv/
+*.pyc
+.env
