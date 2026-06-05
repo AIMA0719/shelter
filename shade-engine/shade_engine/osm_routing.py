@@ -16,6 +16,11 @@ from .raycast import ProjectedBuilding, is_point_shaded
 from .routing import RouteOption
 
 _MAX_SHADOW_DISTANCE_CAP_M = 1500.0
+_DEFAULT_MAX_SNAP_M = 200.0
+
+
+class RouteNotFound(ValueError):
+    """보행 그래프로 경로를 찾지 못함(범위 밖·연결 끊김 등). 호출측은 폴백한다."""
 
 
 def _project_buildings(buildings: list[Building], proj: LocalProjection) -> list[ProjectedBuilding]:
@@ -44,14 +49,19 @@ def plan_routes_osm(
     *,
     alphas: dict[str, float] | None = None,
     prefer_sun: bool = False,
+    max_snap_m: float = _DEFAULT_MAX_SNAP_M,
 ) -> list[RouteOption]:
-    """OSM 보행 그래프에서 최단/균형/그늘(또는 햇빛) 경로 후보를 만든다."""
+    """OSM 보행 그래프에서 최단/균형/그늘(또는 햇빛) 경로 후보를 만든다.
+
+    출발/도착이 그래프에서 max_snap_m 보다 멀거나, 그래프상 연결되지 않으면
+    RouteNotFound 를 던진다(호출측이 격자 등으로 폴백). 잘못된 0거리/점프 경로 방지.
+    """
     if alphas is None:
         third = "sunniest" if prefer_sun else "shadiest"
         alphas = {"shortest": 0.0, "balanced": 3.0, third: 12.0}
 
     if graph.node_count() == 0:
-        return [RouteOption(name=n, alpha=a, coords=[origin, dest], distance_m=0.0, sun_fraction=0.0) for n, a in alphas.items()]
+        raise RouteNotFound("빈 보행 그래프")
 
     lat0 = (origin[0] + dest[0]) / 2
     lon0 = (origin[1] + dest[1]) / 2
@@ -80,6 +90,15 @@ def plan_routes_osm(
 
     start = graph.nearest_node(*origin)
     goal = graph.nearest_node(*dest)
+
+    # 스냅 거리 검증: 그래프가 출발/도착을 제대로 덮지 못하면 폴백시킨다.
+    o_snap = haversine_m(origin[0], origin[1], *graph.nodes[start])
+    d_snap = haversine_m(dest[0], dest[1], *graph.nodes[goal])
+    if o_snap > max_snap_m or d_snap > max_snap_m:
+        raise RouteNotFound(f"보행망 범위 밖(스냅 {o_snap:.0f}m/{d_snap:.0f}m)")
+    if start == goal and haversine_m(origin[0], origin[1], dest[0], dest[1]) > max_snap_m:
+        raise RouteNotFound("출발/도착이 같은 노드로 스냅됨(그래프가 너무 성김)")
+
     blocked[start] = False
     blocked[goal] = False
 
@@ -91,6 +110,8 @@ def plan_routes_osm(
     options: list[RouteOption] = []
     for name, alpha in alphas.items():
         path = _dijkstra(graph, start, goal, avoid, blocked, alpha)
+        if path is None:
+            raise RouteNotFound("보행 그래프상 출발-도착이 연결되지 않음")
         coords = [graph.nodes[i] for i in path]
         if coords:
             coords[0] = origin
@@ -107,8 +128,13 @@ def plan_routes_osm(
     return options
 
 
-def _dijkstra(graph, start: int, goal: int, avoid: list[float], blocked: list[bool], alpha: float) -> list[int]:
-    """엣지비용 = 거리 × (1 + α · 엣지회피비율). blocked 노드는 통행 불가."""
+def _dijkstra(
+    graph, start: int, goal: int, avoid: list[float], blocked: list[bool], alpha: float
+) -> list[int] | None:
+    """엣지비용 = 거리 × (1 + α · 엣지회피비율). blocked 노드는 통행 불가.
+
+    도달 불가면 None.
+    """
     dist: dict[int, float] = {start: 0.0}
     prev: dict[int, int] = {}
     pq: list[tuple[float, int]] = [(0.0, start)]
@@ -132,7 +158,7 @@ def _dijkstra(graph, start: int, goal: int, avoid: list[float], blocked: list[bo
                 heapq.heappush(pq, (nd, v))
 
     if goal not in dist:
-        return [start, goal]
+        return None
     path = [goal]
     while path[-1] != start:
         path.append(prev[path[-1]])

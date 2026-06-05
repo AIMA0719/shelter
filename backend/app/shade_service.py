@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from shade_engine.comfort import comfort_score
 from shade_engine.engine import compute_route_shade
 from shade_engine.osm_graph import OsmGraph
-from shade_engine.osm_routing import plan_routes_osm
+from shade_engine.osm_routing import RouteNotFound, plan_routes_osm
 from shade_engine.routing import plan_routes
 from shade_engine.suggest import best_departure, evaluate_departures
 from shade_engine.sun import solar_position
@@ -129,23 +129,36 @@ class ShadeService:
         speed = MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"])
         info = self.weather.badge(req.origin.lat, req.origin.lon, depart)
 
-        # 보행 그래프가 있으면 실제 OSM 경로 라우팅, 없으면 격자 프로토타입.
-        if self.walk_graph is not None and self.walk_graph.node_count() > 0:
-            routing = "osm"
-            raw_options = plan_routes_osm(
-                self.walk_graph,
-                (req.origin.lat, req.origin.lon),
-                (req.destination.lat, req.destination.lon),
-                buildings,
-                sun.azimuth_deg,
-                sun.altitude_deg,
-                prefer_sun=(req.prefer == "sun"),
-            )
-        else:
-            routing = "grid"
+        origin_ll = (req.origin.lat, req.origin.lon)
+        dest_ll = (req.destination.lat, req.destination.lon)
+
+        # OSM 보행 그래프는 '도보' 모드에서만 사용(자전거는 보행 전용 망에 부적합).
+        # 그래프가 출발/도착을 못 덮으면 RouteNotFound → 격자로 폴백.
+        raw_options = None
+        routing = "grid"
+        if (
+            req.mode == "walk"
+            and self.walk_graph is not None
+            and self.walk_graph.node_count() > 0
+        ):
+            try:
+                raw_options = plan_routes_osm(
+                    self.walk_graph,
+                    origin_ll,
+                    dest_ll,
+                    buildings,
+                    sun.azimuth_deg,
+                    sun.altitude_deg,
+                    prefer_sun=(req.prefer == "sun"),
+                )
+                routing = "osm"
+            except RouteNotFound:
+                raw_options = None
+
+        if raw_options is None:
             raw_options = plan_routes(
-                (req.origin.lat, req.origin.lon),
-                (req.destination.lat, req.destination.lon),
+                origin_ll,
+                dest_ll,
                 buildings,
                 sun.azimuth_deg,
                 sun.altitude_deg,

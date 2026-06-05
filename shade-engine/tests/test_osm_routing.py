@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
 from shade_engine.demo import synthetic_scene
+import pytest
+
 from shade_engine.osm_graph import OsmGraph, parse_overpass_walk
-from shade_engine.osm_routing import _dijkstra, plan_routes_osm
+from shade_engine.osm_routing import RouteNotFound, _dijkstra, plan_routes_osm
 from shade_engine.sun import solar_position
 
 KST = timezone(timedelta(hours=9))
@@ -59,8 +61,27 @@ def test_plan_routes_osm_invariants_and_shade_preference():
     assert by["shadiest"].sun_fraction <= by["shortest"].sun_fraction + 1e-9
 
 
-def test_plan_routes_osm_empty_graph_fallback():
-    options = plan_routes_osm(OsmGraph(), (37.5, 127.0), (37.6, 127.1), [], 264.0, 44.0)
-    assert len(options) == 3
-    for o in options:
-        assert o.coords == [(37.5, 127.0), (37.6, 127.1)]
+def test_plan_routes_osm_empty_graph_raises():
+    with pytest.raises(RouteNotFound):
+        plan_routes_osm(OsmGraph(), (37.5, 127.0), (37.6, 127.1), [], 264.0, 44.0)
+
+
+def test_plan_routes_osm_raises_when_far_from_network():
+    # 코덱스 회귀: 그래프가 출발/도착을 못 덮으면(먼 스냅) RouteNotFound.
+    graph = parse_overpass_walk(_two_street_network())
+    with pytest.raises(RouteNotFound):
+        plan_routes_osm(graph, (37.6000, 127.2000), (37.6010, 127.2000), [], 264.0, 44.0)
+
+
+def test_plan_routes_osm_raises_when_disconnected():
+    # 코덱스 회귀: 두 개의 분리된 거리 → 한쪽에서 다른쪽으로 연결 안 됨.
+    def way(pts):
+        return {"type": "way", "tags": {"highway": "footway"}, "geometry": [{"lat": la, "lon": lo} for la, lo in pts]}
+
+    payload = {"elements": [
+        way([(37.5000, 127.0000), (37.5010, 127.0000)]),
+        way([(37.5000, 127.0100), (37.5010, 127.0100)]),  # 분리된 별도 거리
+    ]}
+    graph = parse_overpass_walk(payload)
+    with pytest.raises(RouteNotFound):
+        plan_routes_osm(graph, (37.5000, 127.0000), (37.5000, 127.0100), [], 264.0, 44.0)

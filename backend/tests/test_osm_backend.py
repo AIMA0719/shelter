@@ -42,6 +42,33 @@ def test_routes_use_osm_when_walk_graph_present():
         assert o.coords[-1].lat == 37.49900 and o.coords[-1].lon == 127.0271
 
 
+def test_bike_mode_falls_back_to_grid_even_with_walk_graph():
+    # 코덱스 회귀: 보행 전용 그래프를 자전거에 쓰면 안 됨 → 격자 폴백.
+    svc = _osm_service()
+    resp = svc.plan_route_options(
+        RoutesRequest(
+            origin=LatLng(lat=37.49750, lon=127.0271),
+            destination=LatLng(lat=37.49900, lon=127.0271),
+            depart_time=datetime(2026, 7, 15, 16, 0, tzinfo=KST),
+            mode="bike",
+        )
+    )
+    assert resp.routing == "grid"
+
+
+def test_routes_fall_back_to_grid_when_outside_network():
+    # 코덱스 회귀: 보행망 범위 밖 요청이면 OSM 대신 격자로 폴백.
+    svc = _osm_service()
+    resp = svc.plan_route_options(
+        RoutesRequest(
+            origin=LatLng(lat=37.6000, lon=127.2000),
+            destination=LatLng(lat=37.6010, lon=127.2000),
+            depart_time=datetime(2026, 7, 15, 16, 0, tzinfo=KST),
+        )
+    )
+    assert resp.routing == "grid"
+
+
 def test_routes_fall_back_to_grid_without_walk_graph():
     _, buildings = synthetic_scene()
     svc = ShadeService(
