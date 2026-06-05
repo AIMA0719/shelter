@@ -71,6 +71,21 @@ class RoutingTest {
     }
 
     @Test
+    fun sameNodeRouteKeepsBothEndpoints() {
+        // 코덱스 회귀: 출발·도착이 같은 노드로 스냅돼도 좌표가 1개로 뭉개지면 안 됨.
+        val g = OsmGraph.fromGeoJson(twoStreetGeoJson)
+        val origin = doubleArrayOf(37.49750, 127.0271)
+        val dest = doubleArrayOf(37.497505, 127.0271) // ~0.5m → 같은 노드 스냅
+        val sun = afternoonSun(origin[0], origin[1])
+        val opts = planRoutesOsm(g, origin, dest, westBuildings(), sun.azimuthDeg, sun.altitudeDeg)
+        for (o in opts) {
+            assertTrue("coords >= 2", o.coords.size >= 2)
+            assertEquals(origin[0], o.coords.first()[0], 1e-9)
+            assertEquals(dest[0], o.coords.last()[0], 1e-9)
+        }
+    }
+
+    @Test
     fun preferSunRenamesOption() {
         val g = OsmGraph.fromGeoJson(twoStreetGeoJson)
         val sun = afternoonSun(37.49750, 127.0271)

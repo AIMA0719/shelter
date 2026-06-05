@@ -158,8 +158,10 @@ class LocalShadeEngine private constructor(
             if (c[0] < mnLat) mnLat = c[0]; if (c[1] < mnLon) mnLon = c[1]
             if (c[0] > mxLat) mxLat = c[0]; if (c[1] > mxLon) mxLon = c[1]
         }
-        val dLat = 300.0 / 111_320.0
-        val dLon = 300.0 / (111_320.0 * Math.cos(Math.toRadians((mnLat + mxLat) / 2)))
+        // 그림자 탐색 최대 반경(1.5km)과 일치하는 패딩 — 저각도 태양의 먼 고층 그림자 누락 방지.
+        val padM = 1500.0
+        val dLat = padM / 111_320.0
+        val dLon = padM / (111_320.0 * Math.cos(Math.toRadians((mnLat + mxLat) / 2)))
         mnLat -= dLat; mxLat += dLat; mnLon -= dLon; mxLon += dLon
         return buildings.filter { b ->
             val bb = b.bbox()

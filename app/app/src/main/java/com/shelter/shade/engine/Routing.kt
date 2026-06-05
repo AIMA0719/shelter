@@ -80,9 +80,13 @@ fun planRoutesOsm(
     for ((name, alpha) in effectiveAlphas) {
         val path = dijkstra(graph, start, goal, avoid, blocked, alpha)
             ?: throw RouteNotFoundException("출발-도착이 연결되지 않음")
-        val coords = ArrayList<DoubleArray>(path.size)
-        for (idx in path) coords.add(doubleArrayOf(graph.nodes[idx][0], graph.nodes[idx][1]))
-        if (coords.isNotEmpty()) {
+        val coords = ArrayList<DoubleArray>(maxOf(path.size, 2))
+        if (path.size <= 1) {
+            // 출발·도착이 같은 노드로 스냅된 짧은 경로 → 양 끝점을 모두 보존
+            coords.add(doubleArrayOf(origin[0], origin[1]))
+            coords.add(doubleArrayOf(dest[0], dest[1]))
+        } else {
+            for (idx in path) coords.add(doubleArrayOf(graph.nodes[idx][0], graph.nodes[idx][1]))
             coords[0] = doubleArrayOf(origin[0], origin[1])
             coords[coords.size - 1] = doubleArrayOf(dest[0], dest[1])
         }
