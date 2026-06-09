@@ -39,5 +39,6 @@ services:
 databases:
   - name: shelter-db
     plan: free
+    region: singapore         # ⚠️ 웹 서비스와 같은 리전이어야 내부 연결됨
     postgresMajorVersion: "16"
     # PostGIS 확장은 schema.sql 의 CREATE EXTENSION 으로 첫 적재 시 활성화.
