@@ -39,10 +39,15 @@ services:
       postgis:
         condition: service_healthy
     environment:
+      # 서울 전역: PostGIS 에서 건물/POI 조회(DSN 지정 시 GeoJSON 대신 DB 사용).
       SHELTER_DB_DSN: postgresql://shelter:shelter@postgis:5432/shelter
       # Optional — pass from host env if set, otherwise empty string (feature disabled).
       SHELTER_KMA_SERVICE_KEY: ${SHELTER_KMA_SERVICE_KEY:-}
       SHELTER_WALK_NETWORK_GEOJSON: ${SHELTER_WALK_NETWORK_GEOJSON:-}
+    volumes:
+      # 변환한 대용량 GeoJSON 을 컨테이너 안에서 읽어 PostGIS 로 적재(ingest)하기 위함.
+      # (이미지엔 굽지 않음 — .dockerignore 로 제외)
+      - ./backend/data:/app/backend/data:ro
     ports:
       - "8000:8000"
 

@@ -8,6 +8,7 @@ import com.shelter.shade.data.LatLng
 import com.shelter.shade.data.PlaceResult
 import com.shelter.shade.data.PlaceSearch
 import com.shelter.shade.data.RoutesResponse
+import com.shelter.shade.data.ShadeRepository
 import com.shelter.shade.engine.LocalShadeEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +46,6 @@ data class ShadeUiState(
     val originLabel: String = "",
     val dest: LatLng? = null,
     val destLabel: String = "",
-    val pickTarget: PickTarget = PickTarget.ORIGIN, // 지도 탭이 지정할 대상
     val departHour: Int = 14,
     val mode: String = "walk",
     val prefer: String = "shade",
@@ -69,33 +69,11 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(ShadeUiState())
     val state: StateFlow<ShadeUiState> = _state.asStateFlow()
 
+    // 서울 전역은 서버(PostGIS), 서버 실패 시 강남 권역은 온디바이스 엔진으로 폴백.
+    private val repo = ShadeRepository()
     private val engine: LocalShadeEngine by lazy { LocalShadeEngine.get(getApplication()) }
     private var searchJob: Job? = null
     private var planJob: Job? = null
-
-    // --- 지점 지정(지도 탭) ---
-    fun onMapTap(lat: Double, lon: Double) {
-        val target = _state.value.pickTarget
-        val ll = LatLng(lat, lon)
-        if (target == PickTarget.ORIGIN) {
-            _state.update { it.copy(origin = ll, originLabel = "지정한 위치", pickTarget = PickTarget.DEST) }
-        } else {
-            _state.update { it.copy(dest = ll, destLabel = "지정한 위치") }
-        }
-        reverseLabel(target, ll)
-        maybeAutoPlan()
-    }
-
-    fun setPickTarget(target: PickTarget) = _state.update { it.copy(pickTarget = target) }
-
-    private fun reverseLabel(target: PickTarget, ll: LatLng) {
-        viewModelScope.launch {
-            val name = withContext(Dispatchers.IO) { PlaceSearch.reverse(ll.lat, ll.lon) } ?: return@launch
-            _state.update {
-                if (target == PickTarget.ORIGIN) it.copy(originLabel = name) else it.copy(destLabel = name)
-            }
-        }
-    }
 
     // --- 검색 ---
     fun openSearch(target: PickTarget) =
@@ -126,7 +104,7 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
         val ll = LatLng(r.lat, r.lon)
         _state.update {
             val s = if (it.searchTarget == PickTarget.ORIGIN) {
-                it.copy(origin = ll, originLabel = r.name, pickTarget = PickTarget.DEST)
+                it.copy(origin = ll, originLabel = r.name)
             } else {
                 it.copy(dest = ll, destLabel = r.name)
             }
@@ -171,16 +149,26 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
         // 직전 계산을 취소 — 슬라이더/토글 연타 시 오래된 결과가 최신을 덮어쓰지 않게.
         planJob?.cancel()
         planJob = viewModelScope.launch {
+            val odt = departOdt(s.departHour)
+            // 1) 서울 전역: 서버(PostGIS) 우선.
             val resp = try {
-                val odt = departOdt(s.departHour)
-                withContext(Dispatchers.Default) {
-                    engine.planRoutes(origin, dest, odt.toInstant().toEpochMilli(), odt.toString(), s.mode, s.prefer)
+                withContext(Dispatchers.IO) {
+                    repo.fetchRouteOptions(origin, dest, odt.toString(), s.mode, s.prefer)
                 }
             } catch (c: CancellationException) {
                 throw c // 취소는 전파(상태를 건드리지 않음)
-            } catch (e: Exception) {
-                _state.update { it.copy(routes = RoutesUiResult.Error(e.message ?: "계산 실패")) }
-                return@launch
+            } catch (server: Exception) {
+                // 2) 서버 실패(오프라인/범위 밖) → 강남 권역 온디바이스 폴백.
+                try {
+                    withContext(Dispatchers.Default) {
+                        engine.planRoutes(origin, dest, odt.toInstant().toEpochMilli(), odt.toString(), s.mode, s.prefer)
+                    }
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (e: Exception) {
+                    _state.update { it.copy(routes = RoutesUiResult.Error(e.message ?: "계산 실패")) }
+                    return@launch
+                }
             }
             _state.update { it.copy(routes = RoutesUiResult.Success(resp)) }
         }
@@ -197,6 +185,9 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(departure = DepartureUiResult.Loading) }
         viewModelScope.launch {
             val r = runCatching {
+                withContext(Dispatchers.IO) { repo.suggestDeparture(origin, dest, s.mode, s.prefer) }
+            }.recoverCatching {
+                // 서버 실패 → 강남 온디바이스 폴백.
                 withContext(Dispatchers.Default) {
                     engine.suggestDeparture(origin, dest, java.time.Instant.now().toEpochMilli(), s.mode, s.prefer)
                 }

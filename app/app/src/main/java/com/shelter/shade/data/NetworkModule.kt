@@ -26,8 +26,11 @@ object NetworkModule {
                     HttpLoggingInterceptor.Level.NONE
                 }
             })
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            // Render 무료 플랜은 유휴 시 잠들어, 첫 요청에서 컨테이너가 깨어나는 데
+            // ~30~60초가 걸릴 수 있다(콜드 스타트). 그 한 번을 견디도록 넉넉히.
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(75, TimeUnit.SECONDS)
             .build()
     }
 

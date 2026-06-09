@@ -118,7 +118,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         svc = get_service()
-        return HealthResponse(version=__version__, buildings_loaded=svc.repo.count())
+        # 아직 데이터 적재(또는 스키마 생성) 전이면 buildings 테이블이 없을 수 있다.
+        # 그래도 헬스체크는 통과시켜야 한다(배포 직후 적재 전 단계에서 컨테이너가
+        # 죽지 않도록). 카운트 실패는 0 으로 보고한다.
+        try:
+            loaded = svc.repo.count()
+        except Exception:
+            loaded = 0
+        return HealthResponse(version=__version__, buildings_loaded=loaded)
 
     @app.post("/v1/shade", response_model=ShadeResponse)
     def shade(req: ShadeRequest) -> ShadeResponse:

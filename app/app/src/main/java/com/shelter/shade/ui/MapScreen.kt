@@ -2,6 +2,13 @@
 
 package com.shelter.shade.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +50,9 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,6 +90,11 @@ fun MapScreen(viewModel: ShadeViewModel) {
     val success = state.routes as? RoutesUiResult.Success
     val segments = success?.response?.options?.getOrNull(state.selectedOption)?.segments.orEmpty()
 
+    // 지도를 탭하면 상·하단 뷰가 사라지고(몰입 모드), 다시 탭하면 돌아온다.
+    var chromeVisible by remember { mutableStateOf(true) }
+    // 평소엔 작은 검색바, 누르면 출발·도착 입력으로 확장.
+    var searchExpanded by remember { mutableStateOf(false) }
+
     // 지점이 정해지면 카메라 이동/맞춤
     LaunchedEffect(state.origin, state.dest) {
         val o = state.origin
@@ -102,7 +117,10 @@ fun MapScreen(viewModel: ShadeViewModel) {
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = camera,
             uiSettings = MapUiSettings(isZoomControlEnabled = false, isScaleBarEnabled = true),
-            onMapClick = { _, latLng -> viewModel.onMapTap(latLng.latitude, latLng.longitude) },
+            onMapClick = { _, _ ->
+                chromeVisible = !chromeVisible
+                if (!chromeVisible) searchExpanded = false
+            },
         ) {
             segments.forEach { seg ->
                 PolylineOverlay(
@@ -127,41 +145,87 @@ fun MapScreen(viewModel: ShadeViewModel) {
             }
         }
 
-        TopBar(state, viewModel, Modifier.align(Alignment.TopCenter))
-        BottomPanel(state, viewModel, Modifier.align(Alignment.BottomCenter))
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = slideInVertically(tween(300)) { -it } + fadeIn(tween(300)),
+            exit = slideOutVertically(tween(300)) { -it } + fadeOut(tween(300)),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            TopBar(state, viewModel, searchExpanded, { searchExpanded = it }, Modifier)
+        }
+
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = slideInVertically(tween(300)) { it } + fadeIn(tween(300)),
+            exit = slideOutVertically(tween(300)) { it } + fadeOut(tween(300)),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            BottomPanel(state, viewModel, Modifier)
+        }
 
         if (state.searchOpen) SearchOverlay(state, viewModel)
     }
 }
 
 @Composable
-private fun TopBar(state: ShadeUiState, vm: ShadeViewModel, modifier: Modifier) {
+private fun TopBar(
+    state: ShadeUiState,
+    vm: ShadeViewModel,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    modifier: Modifier,
+) {
     Card(
         modifier = modifier.fillMaxWidth().statusBarsPadding().padding(12.dp),
         shape = RoundedCornerShape(14.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            EndField("출발", state.originLabel.ifBlank { "출발지 검색 · 또는 지도 탭" }, state.origin != null, OriginBlue) {
-                vm.openSearch(PickTarget.ORIGIN)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                HorizontalDivider(Modifier.weight(1f))
-                IconButton(onClick = vm::swapEnds) {
-                    Icon(Icons.Filled.SwapVert, contentDescription = "출발↔도착")
+        Column(
+            Modifier.padding(12.dp).animateContentSize(tween(300)),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (!expanded) {
+                CollapsedSearchBar(state) { onExpandedChange(true) }
+            } else {
+                EndField("출발", state.originLabel.ifBlank { "출발지 검색" }, state.origin != null, OriginBlue) {
+                    vm.openSearch(PickTarget.ORIGIN)
                 }
-                HorizontalDivider(Modifier.weight(1f))
-            }
-            EndField("도착", state.destLabel.ifBlank { "도착지 검색 · 또는 지도 탭" }, state.dest != null, DestRed) {
-                vm.openSearch(PickTarget.DEST)
-            }
-            // 지도 탭 대상 표시
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("지도 탭 지정:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                FilterChip(selected = state.pickTarget == PickTarget.ORIGIN, onClick = { vm.setPickTarget(PickTarget.ORIGIN) }, label = { Text("출발") })
-                FilterChip(selected = state.pickTarget == PickTarget.DEST, onClick = { vm.setPickTarget(PickTarget.DEST) }, label = { Text("도착") })
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    HorizontalDivider(Modifier.weight(1f))
+                    IconButton(onClick = vm::swapEnds) {
+                        Icon(Icons.Filled.SwapVert, contentDescription = "출발↔도착")
+                    }
+                    HorizontalDivider(Modifier.weight(1f))
+                }
+                EndField("도착", state.destLabel.ifBlank { "도착지 검색" }, state.dest != null, DestRed) {
+                    vm.openSearch(PickTarget.DEST)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CollapsedSearchBar(state: ShadeUiState, onClick: () -> Unit) {
+    val hasEnds = state.origin != null || state.dest != null
+    val summary = when {
+        state.origin != null && state.dest != null -> "${state.originLabel} → ${state.destLabel}"
+        state.origin != null -> "출발: ${state.originLabel}"
+        state.dest != null -> "도착: ${state.destLabel}"
+        else -> "출발지·도착지 검색"
+    }
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+        Text(
+            summary,
+            color = if (hasEnds) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

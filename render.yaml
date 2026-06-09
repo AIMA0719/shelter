@@ -1,0 +1,43 @@
+# Shelter — Render Blueprint (무료 플랜)
+#
+# 깃허브 저장소를 Render 에 연결하고 New → Blueprint 로 이 파일을 읽히면
+# 백엔드 웹 서비스 + 무료 PostgreSQL(PostGIS) 가 한 번에 생성된다.
+#
+# 배포 후 데이터 적재는 로컬 PC 에서 한 줄(docs/DEPLOY_RENDER.md 참고):
+#   python -m app.db.ingest --dsn <External DB URL> \
+#       --init-schema app/db/schema.sql \
+#       --buildings data/seoul_all_buildings.geojson \
+#       --pois data/sample_pois.geojson --replace
+#
+# 주의(무료 플랜):
+#  - 웹 서비스는 15분 유휴 시 잠듦 → 첫 요청 콜드 스타트(~30~60s). 핑거로 완화.
+#  - 무료 Postgres 는 생성 90일 후 삭제 → 새로 만들고 위 ingest 한 번 다시.
+
+services:
+  - type: web
+    name: shelter-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .          # shade-engine/ 와 backend/ 둘 다 필요(레포 루트)
+    plan: free
+    region: singapore         # 한국에서 가까운 무료 리전
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # PostGIS DSN — 아래 database 의 내부 접속 문자열을 자동 주입.
+      - key: SHELTER_DB_DSN
+        fromDatabase:
+          name: shelter-db
+          property: connectionString
+      # 기상청 키(선택) — 콘솔에서 직접 입력(빈 값이면 stub 날씨).
+      - key: SHELTER_KMA_SERVICE_KEY
+        sync: false
+      # 프록시(Render 라우터) 뒤이므로 실제 클라이언트 IP 추출.
+      - key: SHELTER_TRUST_PROXY
+        value: "true"
+
+databases:
+  - name: shelter-db
+    plan: free
+    postgresMajorVersion: "16"
+    # PostGIS 확장은 schema.sql 의 CREATE EXTENSION 으로 첫 적재 시 활성화.
