@@ -115,7 +115,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse(status_code=429, content={"detail": "요청이 너무 많습니다."})
         return await call_next(request)
 
-    @app.get("/health", response_model=HealthResponse)
+    # GET + HEAD 둘 다 허용 — UptimeRobot 무료 플랜은 HEAD 로만 핑하기 때문(콜드 스타트 방지).
+    @app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
     def health() -> HealthResponse:
         svc = get_service()
         # 아직 데이터 적재(또는 스키마 생성) 전이면 buildings 테이블이 없을 수 있다.
