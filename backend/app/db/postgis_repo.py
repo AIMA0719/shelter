@@ -86,16 +86,16 @@ class PostGISBuildingsRepository:
         else:
             pts = ", ".join(f"{lon} {lat}" for lat, lon in coords)
             line_wkt = f"LINESTRING({pts})"
+        # 평면(geometry) ST_DWithin — GiST 인덱스를 직접 쓰고 거리계산이 가볍다.
+        # 반경은 도(degree) 단위(rdeg). 위도 37.5°N 에서 경도 1도가 더 짧아 동서로 약간
+        # 넓게 잡히지만 코리도로는 넉넉해 무방하다. geography 캐스트(무거움)는 피한다.
         sql = (
             "SELECT height_m, height_estimated, ST_AsGeoJSON(geom), osm_id FROM buildings "
-            "WHERE geom && ST_Expand(ST_GeomFromText(%(wkt)s, 4326), %(rdeg)s) "
-            "AND ST_DWithin(geom::geography, ST_GeogFromText(%(gwkt)s)::geography, %(rm)s)"
+            "WHERE ST_DWithin(geom, ST_GeomFromText(%(wkt)s, 4326), %(rdeg)s)"
         )
         params = {
             "wkt": line_wkt,
-            "gwkt": f"SRID=4326;{line_wkt}",
             "rdeg": radius_m / 111_320.0,
-            "rm": radius_m,
         }
         out: list[Building] = []
         with self._psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
