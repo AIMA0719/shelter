@@ -61,8 +61,8 @@ data class ShadeUiState(
 )
 
 private val KST: ZoneOffset = ZoneOffset.ofHours(9)
-// 강남 권역(데이터 범위)로 검색 바이어스: [minLon, minLat, maxLon, maxLat]
-private val GANGNAM_VIEWBOX = doubleArrayOf(127.020, 37.488, 127.045, 37.508)
+// 서울 전역(건물 데이터 범위)으로 검색 제한: [minLon, minLat, maxLon, maxLat]
+private val SEOUL_VIEWBOX = doubleArrayOf(126.76, 37.41, 127.19, 37.70)
 
 class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -92,7 +92,7 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
         searchJob = viewModelScope.launch {
             delay(250) // 디바운스
             _state.update { it.copy(searching = true) }
-            val results = runCatching { PlaceSearch.search(q, GANGNAM_VIEWBOX) }.getOrDefault(emptyList())
+            val results = runCatching { PlaceSearch.search(q, SEOUL_VIEWBOX) }.getOrDefault(emptyList())
             // 응답이 도착했을 때도 여전히 같은 쿼리/대상일 때만 반영(오래된 응답 무시)
             _state.update {
                 if (it.searchQuery == q && it.searchTarget == target) it.copy(searchResults = results, searching = false) else it

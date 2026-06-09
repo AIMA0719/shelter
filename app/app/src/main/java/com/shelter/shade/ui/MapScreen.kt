@@ -359,7 +359,7 @@ private fun SearchOverlay(state: ShadeUiState, vm: ShadeViewModel) {
                 }
             }
             if (!state.searching && state.searchResults.isEmpty() && state.searchQuery.isNotBlank()) {
-                Text("검색 결과가 없어요. (강남 권역만 지원)", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(12.dp))
+                Text("검색 결과가 없어요. (서울 지역만 지원)", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(12.dp))
             }
         }
     }
