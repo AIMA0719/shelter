@@ -93,6 +93,18 @@ class ShadeService:
         dlon = margin / (_M_PER_DEG_LAT * max(0.1, math.cos(math.radians(mean_lat))))
         return (min(lats) - dlat, min(lons) - dlon, max(lats) + dlat, max(lons) + dlon)
 
+    def _query_route_buildings(self, coords: list[LatLng], radius_m: float):
+        """경로 주변 건물 조회. 저장소가 코리도 질의를 지원하면 라인 버퍼(좁은 띠)로,
+        아니면 bbox 사각형으로. 긴 대각선 경로에서 코리도가 건물 수를 크게 줄인다."""
+        qc = getattr(self.repo, "query_corridor", None)
+        if qc is not None:
+            try:
+                return qc([(c.lat, c.lon) for c in coords], radius_m)
+            except Exception:
+                pass  # 코리도 질의 실패 시 bbox 로 안전 폴백
+        min_lat, min_lon, max_lat, max_lon = self._bbox_with_margin(coords)
+        return self.repo.query_bbox(min_lat, min_lon, max_lat, max_lon)
+
     def compute(self, req: ShadeRequest) -> ShadeResponse:
         coords = self._resolve_coords(req)
         if len(coords) > _MAX_INPUT_COORDS:
@@ -106,8 +118,8 @@ class ShadeService:
         if isinstance(cached, ShadeResponse):
             return cached.model_copy(update={"cached": True})
 
-        min_lat, min_lon, max_lat, max_lon = self._bbox_with_margin(coords)
-        buildings = self.repo.query_bbox(min_lat, min_lon, max_lat, max_lon)
+        # 실제 경로(coords) 주변 좁은 띠만 조회(그림자 도달 고려해 margin+여유).
+        buildings = self._query_route_buildings(coords, radius_m=self.settings.bbox_margin_m + 100.0)
 
         route_shade = compute_route_shade(
             [(c.lat, c.lon) for c in coords],
@@ -153,8 +165,9 @@ class ShadeService:
 
         sun = solar_position(req.origin.lat, req.origin.lon, depart)
 
-        min_lat, min_lon, max_lat, max_lon = self._bbox_with_margin([req.origin, req.destination])
-        buildings = self.repo.query_bbox(min_lat, min_lon, max_lat, max_lon)
+        # 격자 라우팅은 직선 주변을 탐색하므로, 직선 주변 코리도(경로 이탈 여유 포함)만 조회.
+        corridor_m = min(900.0, max(400.0, 0.2 * od_m))
+        buildings = self._query_route_buildings([req.origin, req.destination], radius_m=corridor_m)
 
         speed = MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"])
         info = self.weather.badge(req.origin.lat, req.origin.lon, depart)
@@ -257,8 +270,7 @@ class ShadeService:
         hours = req.hours or _DEFAULT_SUGGEST_HOURS
         candidates = [datetime(y, m, d, h, 0, tzinfo=_KST) for h in hours]
 
-        min_lat, min_lon, max_lat, max_lon = self._bbox_with_margin(coords)
-        buildings = self.repo.query_bbox(min_lat, min_lon, max_lat, max_lon)
+        buildings = self._query_route_buildings(coords, radius_m=self.settings.bbox_margin_m + 100.0)
         speed = MODE_SPEED_MPS.get(req.mode, MODE_SPEED_MPS["walk"])
 
         evals = evaluate_departures(

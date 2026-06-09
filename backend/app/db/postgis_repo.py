@@ -68,6 +68,44 @@ class PostGISBuildingsRepository:
                     out.append(b)
         return out
 
+    def query_corridor(
+        self, coords: list[tuple[float, float]], radius_m: float
+    ) -> list[Building]:
+        """경로(coords=[(lat,lon)]) 주변 radius_m 이내 건물만 조회.
+
+        긴 대각선 경로에서 bbox 사각형은 실제 경로보다 훨씬 넓어 건물을 과도하게
+        가져온다(직렬화/적재 비용↑). 경로 라인 버퍼(코리도)로 좁힌다.
+        `geom && ST_Expand(line)` 로 GiST 인덱스 프리필터 후 ST_DWithin(geography)
+        으로 정확히 거른다 — 반환 행이 줄어 ST_AsGeoJSON 직렬화 비용이 크게 준다.
+        """
+        if not coords:
+            return []
+        if len(coords) == 1:
+            lat, lon = coords[0]
+            line_wkt = f"POINT({lon} {lat})"
+        else:
+            pts = ", ".join(f"{lon} {lat}" for lat, lon in coords)
+            line_wkt = f"LINESTRING({pts})"
+        sql = (
+            "SELECT height_m, height_estimated, ST_AsGeoJSON(geom), osm_id FROM buildings "
+            "WHERE geom && ST_Expand(ST_GeomFromText(%(wkt)s, 4326), %(rdeg)s) "
+            "AND ST_DWithin(geom::geography, ST_GeogFromText(%(gwkt)s)::geography, %(rm)s)"
+        )
+        params = {
+            "wkt": line_wkt,
+            "gwkt": f"SRID=4326;{line_wkt}",
+            "rdeg": radius_m / 111_320.0,
+            "rm": radius_m,
+        }
+        out: list[Building] = []
+        with self._psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
+            cur.execute(sql, params)
+            for height_m, estimated, geojson_str, osm_id in cur.fetchall():
+                b = _row_to_building(height_m, estimated, geojson_str, osm_id)
+                if b is not None:
+                    out.append(b)
+        return out
+
     def count(self) -> int:
         with self._psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM buildings")
