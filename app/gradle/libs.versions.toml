@@ -12,6 +12,7 @@ retrofitSerialization = "1.0.0"
 coroutines = "1.9.0"
 naverMapCompose = "1.7.4"
 naverMapSdk = "3.23.2"
+playServicesLocation = "21.3.0"
 junit = "4.13.2"
 
 [libraries]
@@ -34,6 +35,7 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 naver-map-compose = { group = "io.github.fornewid", name = "naver-map-compose", version.ref = "naverMapCompose" }
 # NCP_KEY_ID(신규 콘솔 키) 인증은 map-sdk 3.21.0+ 필요 → 전이 버전(3.19.1)을 최신으로 상향
 naver-map-sdk = { group = "com.naver.maps", name = "map-sdk", version.ref = "naverMapSdk" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]

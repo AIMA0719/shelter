@@ -2,10 +2,15 @@
 
 package com.shelter.shade.ui
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
@@ -35,6 +40,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.runtime.Composable
@@ -52,9 +59,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -71,11 +80,13 @@ import com.naver.maps.map.compose.rememberCameraPositionState
 import com.naver.maps.map.compose.rememberMarkerState
 import androidx.compose.runtime.LaunchedEffect
 import com.naver.maps.geometry.LatLng as NaverLatLng
+import com.shelter.shade.data.LocationProvider
 import com.shelter.shade.data.PlaceResult
 import com.shelter.shade.data.RouteOptionOut
 import com.shelter.shade.data.WeatherBadge
 import com.shelter.shade.ui.theme.ShadeGreen
 import com.shelter.shade.ui.theme.SunOrange
+import kotlinx.coroutines.launch
 
 private val OriginBlue = Color(0xFF1E88E5)
 private val DestRed = Color(0xFFE53935)
@@ -94,6 +105,43 @@ fun MapScreen(viewModel: ShadeViewModel) {
     var chromeVisible by remember { mutableStateOf(true) }
     // 평소엔 작은 검색바, 누르면 출발·도착 입력으로 확장.
     var searchExpanded by remember { mutableStateOf(false) }
+
+    // 위치 권한 + 현재 위치.
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var hasLocationPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result -> hasLocationPermission = result.values.any { it } }
+
+    // 앱 시작 시 위치 권한 요청.
+    LaunchedEffect(Unit) {
+        if (!hasLocationPermission) {
+            permLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+            )
+        }
+    }
+    // 권한이 생기면 현재 위치를 출발지로(앱 시작 시 1회). 카메라는 아래 origin effect 가 이동.
+    LaunchedEffect(hasLocationPermission) {
+        if (hasLocationPermission && state.origin == null) {
+            LocationProvider.current(context)?.let { viewModel.setOriginToCurrent(it) }
+        }
+    }
+    // '내 위치' 버튼: 어디서든 현재 위치로 카메라 이동(권한 없으면 요청).
+    val onMyLocation: () -> Unit = {
+        if (hasLocationPermission) {
+            scope.launch {
+                LocationProvider.current(context)?.let {
+                    camera.animate(CameraUpdate.scrollAndZoomTo(NaverLatLng(it.lat, it.lon), 16.0))
+                }
+            }
+        } else {
+            permLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+            )
+        }
+    }
 
     // 지점이 정해지면 카메라 이동/맞춤
     LaunchedEffect(state.origin, state.dest) {
@@ -154,13 +202,27 @@ fun MapScreen(viewModel: ShadeViewModel) {
             TopBar(state, viewModel, searchExpanded, { searchExpanded = it }, Modifier)
         }
 
-        AnimatedVisibility(
-            visible = chromeVisible,
-            enter = slideInVertically(tween(300)) { it } + fadeIn(tween(300)),
-            exit = slideOutVertically(tween(300)) { it } + fadeOut(tween(300)),
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) {
-            BottomPanel(state, viewModel, Modifier)
+        // 하단: '내 위치' 버튼(항상 표시) + 그늘 패널(몰입 모드 시 슬라이드). 패널이 줄어들면
+        // 컬럼이 짧아져 버튼이 자연스럽게 아래로 따라 내려가고, 다시 펴지면 위로 올라온다.
+        Column(Modifier.align(Alignment.BottomCenter)) {
+            Row(
+                Modifier.fillMaxWidth().padding(end = 16.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                FloatingActionButton(
+                    onClick = onMyLocation,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ) {
+                    Icon(Icons.Filled.MyLocation, contentDescription = "내 위치", tint = OriginBlue)
+                }
+            }
+            AnimatedVisibility(
+                visible = chromeVisible,
+                enter = slideInVertically(tween(300)) { it } + expandVertically(tween(300)) + fadeIn(tween(300)),
+                exit = slideOutVertically(tween(300)) { it } + shrinkVertically(tween(300)) + fadeOut(tween(300)),
+            ) {
+                BottomPanel(state, viewModel, Modifier)
+            }
         }
 
         if (state.searchOpen) SearchOverlay(state, viewModel)

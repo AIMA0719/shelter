@@ -79,6 +79,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.naver.map.compose)
     implementation(libs.naver.map.sdk) // NCP_KEY_ID 인증 위해 map-sdk 3.21.0+ 강제
+    implementation(libs.play.services.location) // 현재 위치(FusedLocationProviderClient)
 
     testImplementation(libs.junit)
 }

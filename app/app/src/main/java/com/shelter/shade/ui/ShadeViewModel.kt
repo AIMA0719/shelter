@@ -75,6 +75,18 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var planJob: Job? = null
 
+    init {
+        // 출발 시각 기본값 = 현재 시각의 정각(분·초는 버림). departOdt 가 분/초를 0 으로 만든다.
+        _state.update { it.copy(departHour = OffsetDateTime.now(KST).hour) }
+    }
+
+    // --- 현재 위치 ---
+    /** 현재 위치를 출발지로 지정(앱 시작 시 자동 + '내 위치' 버튼). */
+    fun setOriginToCurrent(ll: LatLng) {
+        _state.update { it.copy(origin = ll, originLabel = "내 위치") }
+        maybeAutoPlan()
+    }
+
     // --- 검색 ---
     fun openSearch(target: PickTarget) =
         _state.update { it.copy(searchOpen = true, searchTarget = target, searchQuery = "", searchResults = emptyList()) }
