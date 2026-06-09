@@ -137,10 +137,10 @@ class ShadeService:
 
     def plan_route_options(self, req: RoutesRequest) -> RoutesResponse:
         """출발→도착에 대해 최단/균형/그늘 경로 후보를 만들고 각각 그늘을 색칠한다."""
-        if (
-            haversine_m(req.origin.lat, req.origin.lon, req.destination.lat, req.destination.lon)
-            > _MAX_PLAN_ROUTE_M
-        ):
+        od_m = haversine_m(
+            req.origin.lat, req.origin.lon, req.destination.lat, req.destination.lon
+        )
+        if od_m > _MAX_PLAN_ROUTE_M:
             raise ValueError("출발-도착 거리가 너무 깁니다(최대 30km).")
         depart = req.depart_time or datetime.now(timezone.utc)
 
@@ -186,13 +186,17 @@ class ShadeService:
                 raw_options = None
 
         if raw_options is None:
+            # 격자 라우팅 비용은 면적(거리²)에 비례해 폭증한다. 긴 경로는 격자 간격을
+            # 넓혀 노드 수를 억제(짧은 경로는 요청값 그대로라 정밀도 유지). 무료 CPU 에서
+            # 도심 횡단(수 km)도 응답 가능하게 하는 핵심 완화책.
+            effective_spacing = max(req.grid_spacing_m, min(120.0, od_m / 80.0))
             raw_options = plan_routes(
                 origin_ll,
                 dest_ll,
                 buildings,
                 sun.azimuth_deg,
                 sun.altitude_deg,
-                grid_spacing_m=req.grid_spacing_m,
+                grid_spacing_m=effective_spacing,
                 prefer_sun=(req.prefer == "sun"),
             )
 
