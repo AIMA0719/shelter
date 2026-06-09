@@ -23,6 +23,12 @@ class LocalShadeEngine private constructor(
     val buildingCount: Int get() = buildings.size
     val walkNodeCount: Int get() = walkGraph?.nodeCount() ?: 0
 
+    /** 이 엔진(강남 권역 에셋)이 해당 좌표를 덮는지 — 서버 실패 시 폴백 가능 여부 판단용. */
+    fun covers(ll: LatLng): Boolean {
+        val bb = bbox ?: return false
+        return ll.lat in bb[0]..bb[2] && ll.lon in bb[1]..bb[3]
+    }
+
     private val bbox: DoubleArray? = run {
         if (buildings.isEmpty()) {
             null

@@ -346,6 +346,12 @@ private fun BottomPanel(state: ShadeUiState, vm: ShadeViewModel, modifier: Modif
                     CircularProgressIndicator()
                 }
                 is RoutesUiResult.Error -> Text("오류: ${r.message}", color = MaterialTheme.colorScheme.error)
+                is RoutesUiResult.TooFar -> Text(
+                    "경로가 너무 멀어요 — 약 %.1fkm (최대 %dkm).\n중간 지점을 도착지로 정해 나눠서 검색해 주세요."
+                        .format(r.distanceM / 1000.0, (r.capM / 1000).toInt()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
                 is RoutesUiResult.Success -> {
                     r.response.weather?.let { WeatherRow(it) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

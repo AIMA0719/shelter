@@ -32,6 +32,8 @@ sealed interface RoutesUiResult {
     data object Loading : RoutesUiResult
     data class Success(val response: RoutesResponse) : RoutesUiResult
     data class Error(val message: String) : RoutesUiResult
+    /** 출발-도착 직선거리가 모드별 상한을 넘어 계산하지 않음(중간 지점 경유 유도). */
+    data class TooFar(val distanceM: Double, val capM: Double) : RoutesUiResult
 }
 
 sealed interface DepartureUiResult {
@@ -63,6 +65,10 @@ data class ShadeUiState(
 private val KST: ZoneOffset = ZoneOffset.ofHours(9)
 // 서울 전역(건물 데이터 범위)으로 검색 제한: [minLon, minLat, maxLon, maxLat]
 private val SEOUL_VIEWBOX = doubleArrayOf(126.76, 37.41, 127.19, 37.70)
+// 출발-도착 직선거리 상한(이 이상은 도보/자전거로 비현실적 + 무료 서버 계산 과부하).
+// 더 멀면 중간 지점을 거쳐 나눠서 검색하도록 안내한다.
+private const val WALK_MAX_ROUTE_M = 6_000.0
+private const val BIKE_MAX_ROUTE_M = 10_000.0
 
 class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -157,6 +163,13 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(routes = RoutesUiResult.Error("출발지와 도착지를 지정하세요.")) }
             return
         }
+        // 거리 상한 초과면 서버를 부르지 않고 즉시 안내(느린 장거리 계산 회피 + 현실성).
+        val distanceM = haversineM(origin, dest)
+        val capM = maxRouteM(s.mode)
+        if (distanceM > capM) {
+            _state.update { it.copy(routes = RoutesUiResult.TooFar(distanceM, capM)) }
+            return
+        }
         _state.update { it.copy(routes = RoutesUiResult.Loading, selectedOption = 0) }
         // 직전 계산을 취소 — 슬라이더/토글 연타 시 오래된 결과가 최신을 덮어쓰지 않게.
         planJob?.cancel()
@@ -170,7 +183,14 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
             } catch (c: CancellationException) {
                 throw c // 취소는 전파(상태를 건드리지 않음)
             } catch (server: Exception) {
-                // 2) 서버 실패(오프라인/범위 밖) → 강남 권역 온디바이스 폴백.
+                // 2) 서버 실패(지연/오프라인). 온디바이스 폴백은 강남 권역 안에서만 의미가 있다.
+                //    범위 밖이면 직선·0% 같은 오해 소지 결과 대신 명확히 안내한다.
+                if (!engine.covers(origin) || !engine.covers(dest)) {
+                    _state.update {
+                        it.copy(routes = RoutesUiResult.Error("서버 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요."))
+                    }
+                    return@launch
+                }
                 try {
                     withContext(Dispatchers.Default) {
                         engine.planRoutes(origin, dest, odt.toInstant().toEpochMilli(), odt.toString(), s.mode, s.prefer)
@@ -217,4 +237,18 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun departOdt(hour: Int): OffsetDateTime =
         OffsetDateTime.of(LocalDate.now(KST), LocalTime.of(hour, 0), KST)
+
+    private fun maxRouteM(mode: String): Double =
+        if (mode == "bike") BIKE_MAX_ROUTE_M else WALK_MAX_ROUTE_M
+
+    /** 두 지점 사이 직선거리(m). */
+    private fun haversineM(a: LatLng, b: LatLng): Double {
+        val radius = 6_371_000.0
+        val dLat = Math.toRadians(b.lat - a.lat)
+        val dLon = Math.toRadians(b.lon - a.lon)
+        val s1 = Math.sin(dLat / 2)
+        val s2 = Math.sin(dLon / 2)
+        val h = s1 * s1 + Math.cos(Math.toRadians(a.lat)) * Math.cos(Math.toRadians(b.lat)) * s2 * s2
+        return radius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+    }
 }
