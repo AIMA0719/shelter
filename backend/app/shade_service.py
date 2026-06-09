@@ -42,7 +42,7 @@ _KST = timezone(timedelta(hours=9))
 # 폭주/오용 방지 입력 상한
 _MAX_INPUT_COORDS = 5000
 _MAX_SHADE_ROUTE_M = 50_000.0  # /v1/shade 경로 총길이 상한(50km)
-_MAX_PLAN_ROUTE_M = 30_000.0  # /v1/routes·departure-suggest 직선거리 상한(30km)
+_MAX_PLAN_ROUTE_M = 12_000.0  # /v1/routes·departure-suggest 직선거리 상한(앱 캡보다 약간 높은 안전장치)
 
 
 def _polyline_length_m(coords: list[LatLng]) -> float:

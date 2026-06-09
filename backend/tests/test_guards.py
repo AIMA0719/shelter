@@ -35,7 +35,7 @@ def test_shade_rejects_too_long_route():
 
 def test_routes_reject_too_far():
     client = _client()
-    # 약 55km → 30km 상한 초과
+    # 약 55km → 거리 상한(12km) 초과
     resp = client.post(
         "/v1/routes",
         json={
