@@ -112,13 +112,13 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeSearch() = _state.update { it.copy(searchOpen = false) }
 
-    /** 입력 텍스트만 갱신. 질의는 명시적 제출([onSearchSubmit])에서만 나간다 —
-     *  Nominatim 정책이 키 입력마다 질의하는 자동완성을 금지하기 때문(프록시 경유여도 동일). */
+    /** 입력 텍스트 갱신 + 이전 질의 결과 비우기. 질의는 명시적 제출([onSearchSubmit])에서만
+     *  나간다 — Nominatim 정책이 키 입력마다 질의하는 자동완성을 금지하기 때문(프록시 경유여도
+     *  동일). 결과를 남겨두면 수정된 검색어 아래 이전 검색어의 결과가 선택될 수 있어 즉시 비운다. */
     fun onSearchQuery(q: String) {
         searchJob?.cancel()
-        _state.update { it.copy(searchQuery = q, searching = false, searchSubmitted = false) }
-        if (q.isBlank()) {
-            _state.update { it.copy(searchResults = emptyList()) }
+        _state.update {
+            it.copy(searchQuery = q, searchResults = emptyList(), searching = false, searchSubmitted = false)
         }
     }
 
