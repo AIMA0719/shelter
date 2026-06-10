@@ -81,8 +81,8 @@ fun OnboardingScreen(onDone: () -> Unit) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("위치 권한 (선택)", fontWeight = FontWeight.Bold)
                     Text(
-                        "현재 위치를 출발지로 자동 지정하는 데만 사용해요. 위치 정보는 기기를 떠나지 않으며, " +
-                            "권한 없이도 장소 검색이나 지도 길게 누르기로 이용할 수 있어요.",
+                        "현재 위치를 출발지로 자동 지정하는 데만 사용해요. 경로를 계산할 때 출발·도착 좌표가 " +
+                            "서버로 전송돼요. 권한 없이도 장소 검색이나 지도 길게 누르기로 이용할 수 있어요.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
