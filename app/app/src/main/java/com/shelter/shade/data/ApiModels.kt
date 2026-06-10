@@ -89,6 +89,8 @@ data class WeatherBadge(
 data class RouteOptionOut(
     val name: String,
     @SerialName("distance_m") val distanceM: Double,
+    // 예상 소요시간(분). 구버전 서버 호환을 위해 기본값 0.0(없으면 표시 생략).
+    @SerialName("duration_min") val durationMin: Double = 0.0,
     @SerialName("shade_percent") val shadePercent: Double,
     val comfort: Double,
     val coords: List<LatLng>,

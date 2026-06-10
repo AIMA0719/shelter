@@ -13,12 +13,52 @@ from __future__ import annotations
 import heapq
 import math
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from .buildings import Building
 from .geo import LocalProjection, haversine_m
 from .raycast import BuildingIndex, ProjectedBuilding
+from .sun import solar_position
 
 _MAX_SHADOW_DISTANCE_CAP_M = 1500.0
+_SUN_TIME_BUCKETS = 4  # 긴 경로에서 태양 이동을 근사할 시간 구간 수
+
+
+def time_bucketed_suns(
+    distances_m: list[float],
+    origin_latlon: tuple[float, float],
+    base_azimuth_deg: float,
+    base_altitude_deg: float,
+    *,
+    depart: datetime | None = None,
+    speed_mps: float | None = None,
+    buckets: int = _SUN_TIME_BUCKETS,
+) -> list[tuple[float, float]]:
+    """각 노드의 (방위각, 고도각) 목록.
+
+    depart/speed 가 주어지면 출발점으로부터의 거리(distances_m)로 도착 예상시각을
+    추정해 시간대별 태양을 적용한다(긴 경로에서 '이동 중 태양이 움직여 그늘 쪽이
+    바뀌는' 효과 반영 — routing 이 정지된 태양에 최적화되던 문제 해결). depart/speed
+    미지정 시 모든 노드에 base 값을 써서 기존 '좁은 영역 1회 계산' 동작을 보존한다.
+    태양 위치는 (좁은 권역이라) 출발점 위경도에서 시각만 바꿔 계산한다.
+    """
+    n = len(distances_m)
+    if depart is None or not speed_mps or speed_mps <= 0 or n == 0:
+        return [(base_azimuth_deg, base_altitude_deg)] * n
+    max_d = max(distances_m)
+    if max_d <= 1.0:
+        return [(base_azimuth_deg, base_altitude_deg)] * n
+    buckets = max(1, buckets)
+    lat0, lon0 = origin_latlon
+    bucket_suns: list[tuple[float, float]] = []
+    for b in range(buckets):
+        frac = (b + 0.5) / buckets
+        t = depart + timedelta(seconds=(max_d * frac) / speed_mps)
+        sp = solar_position(lat0, lon0, t)
+        bucket_suns.append((sp.azimuth_deg, sp.altitude_deg))
+    return [
+        bucket_suns[min(buckets - 1, int((d / max_d) * buckets))] for d in distances_m
+    ]
 
 
 @dataclass(frozen=True)
@@ -64,6 +104,8 @@ def plan_routes(
     max_nodes: int = 6000,
     alphas: dict[str, float] | None = None,
     prefer_sun: bool = False,
+    depart: datetime | None = None,
+    speed_mps: float | None = None,
 ) -> list[RouteOption]:
     """origin→dest 의 최단/균형/그늘(또는 햇빛) 경로 후보를 만든다.
 
@@ -107,23 +149,36 @@ def plan_routes(
 
     projected = _project_buildings(buildings, proj)
     tallest = max((b.height_m for b in projected), default=0.0)
-    tan_alt = math.tan(math.radians(max(sun_altitude_deg, 0.0)))
-    max_dist = (
-        min(_MAX_SHADOW_DISTANCE_CAP_M, tallest / tan_alt) if tan_alt > 1e-6 else _MAX_SHADOW_DISTANCE_CAP_M
-    )
 
-    # 각 노드의 햇빛 여부 + 통행 가능 여부를 1회 계산(좁은 영역이라 태양 위치는 거의 일정).
+    # 각 노드의 햇빛 여부 + 통행 가능 여부를 계산한다. depart/speed 가 주어지면
+    # 출발점으로부터의 거리로 도착 예상시각을 추정해 시간대별 태양을 적용(긴 경로의
+    # 태양 이동 반영), 아니면 출발 태양 1회 값을 모든 노드에 사용(좁은 영역 근사).
     # 건물 내부 노드는 통행 불가(blocked) — 그렇지 않으면 '값싼 그늘'로 오인되어
     # 경로가 건물을 관통할 수 있다.
+    node_dists = [
+        math.hypot(node_xy(r, c)[0] - ox, node_xy(r, c)[1] - oy)
+        for r in range(nrows)
+        for c in range(ncols)
+    ]
+    node_suns = time_bucketed_suns(
+        node_dists, origin, sun_azimuth_deg, sun_altitude_deg, depart=depart, speed_mps=speed_mps
+    )
     index = BuildingIndex(projected)
     sunny = [[False] * ncols for _ in range(nrows)]
     blocked = [[False] * ncols for _ in range(nrows)]
     for r in range(nrows):
         for c in range(ncols):
+            az, alt = node_suns[r * ncols + c]
+            tan_alt = math.tan(math.radians(max(alt, 0.0)))
+            max_dist = (
+                min(_MAX_SHADOW_DISTANCE_CAP_M, tallest / tan_alt)
+                if tan_alt > 1e-6
+                else _MAX_SHADOW_DISTANCE_CAP_M
+            )
             res = index.is_point_shaded(
                 node_xy(r, c),
-                sun_azimuth_deg,
-                sun_altitude_deg,
+                az,
+                alt,
                 max_distance_m=max(max_dist, spacing),
             )
             sunny[r][c] = not res.shaded

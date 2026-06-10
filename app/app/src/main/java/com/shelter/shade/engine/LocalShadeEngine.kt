@@ -94,11 +94,13 @@ class LocalShadeEngine private constructor(
             rawOptions = straightOptions(origin, dest, prefer)
         }
 
+        val speed = speedFor(mode)
         val options = rawOptions.map { opt ->
-            val rs = computeRouteShade(opt.coords, departEpochMillis, nearby, spacingM = 10.0, walkSpeedMps = speedFor(mode))
+            val rs = computeRouteShade(opt.coords, departEpochMillis, nearby, spacingM = 10.0, walkSpeedMps = speed)
             RouteOptionOut(
                 name = opt.name,
                 distanceM = round1(opt.distanceM),
+                durationMin = round1(opt.distanceM / speed / 60.0),
                 shadePercent = rs.shadePercent,
                 comfort = Comfort.score(rs.shadeFraction, weather.tempC, weather.uvIndex),
                 coords = opt.coords.map { LatLng(it[0], it[1]) },

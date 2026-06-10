@@ -88,6 +88,7 @@ class RoutesRequest(BaseModel):
 class RouteOptionOut(BaseModel):
     name: str  # 'shortest' | 'balanced' | 'shadiest' | 'sunniest'
     distance_m: float
+    duration_min: float  # 모드 평균속도 기준 예상 소요시간(분) — P0 비교축(거리·시간·그늘%)
     shade_percent: float
     comfort: float
     coords: list[LatLng]

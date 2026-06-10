@@ -80,6 +80,17 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
     private val engine: LocalShadeEngine by lazy { LocalShadeEngine.get(getApplication()) }
     private var searchJob: Job? = null
     private var planJob: Job? = null
+    private var suggestJob: Job? = null
+
+    /**
+     * 출발시간 추천은 출발/도착/모드/선호(여름·겨울)에 종속된다. 이들이 바뀌면 이전
+     * 경로 기준의 추천이 화면에 남아 '엉뚱한 경로의 추천'으로 보이므로 즉시 비운다
+     * (진행 중 요청도 취소). departHour 변경은 추천 자체에 영향이 없으므로 제외.
+     */
+    private fun invalidateDepartureSuggestion() {
+        suggestJob?.cancel()
+        _state.update { if (it.departure == DepartureUiResult.Idle) it else it.copy(departure = DepartureUiResult.Idle) }
+    }
 
     init {
         // 출발 시각 기본값 = 현재 시각의 정각(분·초는 버림). departOdt 가 분/초를 0 으로 만든다.
@@ -90,6 +101,7 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
     /** 현재 위치를 출발지로 지정(앱 시작 시 자동 + '내 위치' 버튼). */
     fun setOriginToCurrent(ll: LatLng) {
         _state.update { it.copy(origin = ll, originLabel = "내 위치") }
+        invalidateDepartureSuggestion()
         maybeAutoPlan()
     }
 
@@ -128,27 +140,70 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
             }
             s.copy(searchOpen = false)
         }
+        invalidateDepartureSuggestion()
         maybeAutoPlan()
     }
+
+    // --- 지도에서 지점 선택 ---
+    /**
+     * 지도를 길게 눌러 좌표로 출발/도착을 지정한다(PRD P0 입력 방식). 출발지가 없으면
+     * 출발지로, 있으면 도착지로 채운다. 역지오코딩으로 라벨을 보완(검색이 못 찾는
+     * 골목·공원 입구 등도 지정 가능). 검색이 끝나기 전엔 임시 라벨을 보여준다.
+     */
+    fun setPointFromMap(ll: LatLng) {
+        val target = if (_state.value.origin == null) PickTarget.ORIGIN else PickTarget.DEST
+        _state.update {
+            if (target == PickTarget.ORIGIN) it.copy(origin = ll, originLabel = "지도에서 선택한 위치")
+            else it.copy(dest = ll, destLabel = "지도에서 선택한 위치")
+        }
+        viewModelScope.launch {
+            val label = runCatching {
+                withContext(Dispatchers.IO) { PlaceSearch.reverse(ll.lat, ll.lon) }
+            }.getOrNull()?.let(::shortLabel)
+            if (!label.isNullOrBlank()) {
+                // 그 사이 사용자가 같은 끝점을 다른 좌표로 바꾸지 않았을 때만 라벨 반영.
+                _state.update {
+                    when (target) {
+                        PickTarget.ORIGIN -> if (it.origin == ll) it.copy(originLabel = label) else it
+                        PickTarget.DEST -> if (it.dest == ll) it.copy(destLabel = label) else it
+                    }
+                }
+            }
+        }
+        invalidateDepartureSuggestion()
+        maybeAutoPlan()
+    }
+
+    private fun shortLabel(displayName: String): String =
+        displayName.split(",").map { it.trim() }.filter { it.isNotEmpty() }.take(2).joinToString(" ")
 
     // --- 옵션/설정 ---
     fun onDepartHour(v: Int) {
         _state.update { it.copy(departHour = v.coerceIn(0, 23)) }
         maybeAutoPlan()
     }
+
+    /** '지금' — 출발 시각을 현재 정각으로 되돌린다. */
+    fun onNow() = onDepartHour(OffsetDateTime.now(KST).hour)
     fun onMode(mode: String) {
         _state.update { it.copy(mode = mode) }
+        invalidateDepartureSuggestion()
         maybeAutoPlan()
     }
     fun onPrefer(prefer: String) {
         _state.update { it.copy(prefer = prefer) }
+        invalidateDepartureSuggestion()
         maybeAutoPlan()
     }
     fun selectOption(index: Int) = _state.update { it.copy(selectedOption = index) }
 
-    fun swapEnds() = _state.update {
-        it.copy(origin = it.dest, originLabel = it.destLabel, dest = it.origin, destLabel = it.originLabel)
-    }.also { maybeAutoPlan() }
+    fun swapEnds() {
+        _state.update {
+            it.copy(origin = it.dest, originLabel = it.destLabel, dest = it.origin, destLabel = it.originLabel)
+        }
+        invalidateDepartureSuggestion()
+        maybeAutoPlan()
+    }
 
     private fun maybeAutoPlan() {
         val s = _state.value
@@ -214,24 +269,41 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(departure = DepartureUiResult.Error("출발지와 도착지를 지정하세요.")) }
             return
         }
+        // 추천이 종속된 경로 입력을 시작 시점에 고정한다. 응답이 늦게 도착했을 때
+        // 그 사이 입력이 바뀌었으면 무시해, 바뀐 경로에 엉뚱한 추천이 붙는 것을 막는다.
+        val mode = s.mode
+        val prefer = s.prefer
         _state.update { it.copy(departure = DepartureUiResult.Loading) }
-        viewModelScope.launch {
-            val r = runCatching {
-                withContext(Dispatchers.IO) { repo.suggestDeparture(origin, dest, s.mode, s.prefer) }
-            }.recoverCatching {
-                // 서버 실패 → 강남 온디바이스 폴백.
-                withContext(Dispatchers.Default) {
-                    engine.suggestDeparture(origin, dest, java.time.Instant.now().toEpochMilli(), s.mode, s.prefer)
+        suggestJob?.cancel()
+        suggestJob = viewModelScope.launch {
+            // 입력이 그대로일 때만 상태 반영(취소/스테일 결과가 최신을 덮어쓰지 않게).
+            fun applyIfCurrent(result: DepartureUiResult) {
+                _state.update {
+                    if (it.origin == origin && it.dest == dest && it.mode == mode && it.prefer == prefer) {
+                        it.copy(departure = result)
+                    } else {
+                        it
+                    }
                 }
             }
-            _state.update {
-                it.copy(
-                    departure = r.fold(
-                        onSuccess = { resp -> DepartureUiResult.Success(resp) },
-                        onFailure = { e -> DepartureUiResult.Error(e.message ?: "계산 실패") },
-                    )
-                )
+            val resp = try {
+                withContext(Dispatchers.IO) { repo.suggestDeparture(origin, dest, mode, prefer) }
+            } catch (c: CancellationException) {
+                throw c // 취소는 전파(상태를 건드리지 않음 — runCatching 처럼 삼키지 않는다)
+            } catch (server: Exception) {
+                // 서버 실패 → 강남 온디바이스 폴백.
+                try {
+                    withContext(Dispatchers.Default) {
+                        engine.suggestDeparture(origin, dest, java.time.Instant.now().toEpochMilli(), mode, prefer)
+                    }
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (e: Exception) {
+                    applyIfCurrent(DepartureUiResult.Error(e.message ?: "계산 실패"))
+                    return@launch
+                }
             }
+            applyIfCurrent(DepartureUiResult.Success(resp))
         }
     }
 

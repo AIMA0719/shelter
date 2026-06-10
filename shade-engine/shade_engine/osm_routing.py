@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import heapq
 import math
+from datetime import datetime
 
 from .buildings import Building
 from .geo import LocalProjection, haversine_m
 from .raycast import BuildingIndex, ProjectedBuilding
-from .routing import RouteOption
+from .routing import RouteOption, time_bucketed_suns
 
 _MAX_SHADOW_DISTANCE_CAP_M = 1500.0
 _DEFAULT_MAX_SNAP_M = 200.0
@@ -50,6 +51,8 @@ def plan_routes_osm(
     alphas: dict[str, float] | None = None,
     prefer_sun: bool = False,
     max_snap_m: float = _DEFAULT_MAX_SNAP_M,
+    depart: datetime | None = None,
+    speed_mps: float | None = None,
 ) -> list[RouteOption]:
     """OSM 보행 그래프에서 최단/균형/그늘(또는 햇빛) 경로 후보를 만든다.
 
@@ -68,21 +71,30 @@ def plan_routes_osm(
     proj = LocalProjection(lat0=lat0, lon0=lon0)
     projected = _project_buildings(buildings, proj)
     tallest = max((b.height_m for b in projected), default=0.0)
-    tan_alt = math.tan(math.radians(max(sun_altitude_deg, 0.0)))
-    max_dist = (
-        min(_MAX_SHADOW_DISTANCE_CAP_M, tallest / tan_alt) if tan_alt > 1e-6 else _MAX_SHADOW_DISTANCE_CAP_M
-    )
 
-    # 노드별 햇빛/통행가능 1회 계산(좁은 영역 → 태양 위치 거의 일정)
+    # 노드별 햇빛/통행가능 계산. depart/speed 가 주어지면 출발점으로부터의 거리로
+    # 도착 예상시각을 추정해 시간대별 태양을 적용(긴 경로의 태양 이동 반영),
+    # 아니면 출발 태양 1회 값을 모든 노드에 사용(좁은 영역 근사 — 기존 동작 보존).
     index = BuildingIndex(projected)
     n = graph.node_count()
+    node_dists = [haversine_m(origin[0], origin[1], lat, lon) for lat, lon in graph.nodes]
+    node_suns = time_bucketed_suns(
+        node_dists, origin, sun_azimuth_deg, sun_altitude_deg, depart=depart, speed_mps=speed_mps
+    )
     sunny = [False] * n
     blocked = [False] * n
     for i, (lat, lon) in enumerate(graph.nodes):
+        az, alt = node_suns[i]
+        tan_alt = math.tan(math.radians(max(alt, 0.0)))
+        max_dist = (
+            min(_MAX_SHADOW_DISTANCE_CAP_M, tallest / tan_alt)
+            if tan_alt > 1e-6
+            else _MAX_SHADOW_DISTANCE_CAP_M
+        )
         res = index.is_point_shaded(
             proj.to_xy(lat, lon),
-            sun_azimuth_deg,
-            sun_altitude_deg,
+            az,
+            alt,
             max_distance_m=max(max_dist, 20.0),
         )
         sunny[i] = not res.shaded

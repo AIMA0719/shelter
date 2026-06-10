@@ -14,6 +14,7 @@ class RateLimiter:
         self.limit = limit_per_min
         self._lock = threading.Lock()
         self._window: dict[str, tuple[int, int]] = {}  # key -> (창 시작(분), 카운트)
+        self._last_minute = -1  # 마지막으로 청소한 분
 
     def allow(self, key: str, now_seconds: float) -> bool:
         """이번 요청을 허용하면 True, 한도 초과면 False."""
@@ -21,6 +22,13 @@ class RateLimiter:
             return True
         minute = int(now_seconds // 60)
         with self._lock:
+            # 분이 바뀌면 지난 창의 키를 모두 제거한다. 이렇게 하지 않으면 한 번
+            # 본 IP 가 영구히 dict 에 남아 메모리가 무한히 증가한다(키 누수).
+            if minute != self._last_minute:
+                self._window = {
+                    k: v for k, v in self._window.items() if v[0] == minute
+                }
+                self._last_minute = minute
             start, count = self._window.get(key, (minute, 0))
             if start != minute:
                 start, count = minute, 0

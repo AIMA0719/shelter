@@ -16,6 +16,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MyLocation
@@ -86,6 +88,7 @@ import com.shelter.shade.data.RouteOptionOut
 import com.shelter.shade.data.WeatherBadge
 import com.shelter.shade.ui.theme.ShadeGreen
 import com.shelter.shade.ui.theme.SunOrange
+import com.shelter.shade.util.GeoFormat
 import kotlinx.coroutines.launch
 
 private val OriginBlue = Color(0xFF1E88E5)
@@ -168,6 +171,10 @@ fun MapScreen(viewModel: ShadeViewModel) {
             onMapClick = { _, _ ->
                 chromeVisible = !chromeVisible
                 if (!chromeVisible) searchExpanded = false
+            },
+            // 길게 누르면 그 좌표를 출발/도착으로 지정(검색이 못 찾는 골목·공원 입구 등).
+            onMapLongClick = { _, coord ->
+                viewModel.setPointFromMap(com.shelter.shade.data.LatLng(coord.latitude, coord.longitude))
             },
         ) {
             segments.forEach { seg ->
@@ -320,10 +327,16 @@ private fun BottomPanel(state: ShadeUiState, vm: ShadeViewModel, modifier: Modif
     ) {
         Column(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)
-                .heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                .heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("출발 ${state.departHour}시", fontWeight = FontWeight.Bold)
+            // 지도의 초록/주황 선이 무엇인지 알려주는 범례(핵심 시각 언어 해독).
+            Legend()
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("출발 ${state.departHour}시", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                FilterChip(selected = false, onClick = vm::onNow, label = { Text("지금") })
+            }
             Slider(
                 value = state.departHour.toFloat(),
                 onValueChange = { vm.onDepartHour(it.toInt()) },
@@ -339,13 +352,26 @@ private fun BottomPanel(state: ShadeUiState, vm: ShadeViewModel, modifier: Modif
 
             when (val r = state.routes) {
                 is RoutesUiResult.Idle -> Text(
-                    "출발·도착을 지정하면 그늘 경로를 보여줘요.",
+                    "출발·도착을 지정하면 그늘 경로를 보여줘요. (지도를 길게 눌러도 지정돼요)",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline,
                 )
-                is RoutesUiResult.Loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                is RoutesUiResult.Loading -> Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     CircularProgressIndicator()
+                    Text(
+                        "경로를 계산 중… 서버를 깨우는 중이면 최대 1분 걸릴 수 있어요.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+                    )
                 }
-                is RoutesUiResult.Error -> Text("오류: ${r.message}", color = MaterialTheme.colorScheme.error)
+                is RoutesUiResult.Error -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(r.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = vm::planRoutes, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                        Text("다시 시도")
+                    }
+                }
                 is RoutesUiResult.TooFar -> Text(
                     "경로가 너무 멀어요 — 약 %.1fkm (최대 %dkm).\n중간 지점을 도착지로 정해 나눠서 검색해 주세요."
                         .format(r.distanceM / 1000.0, (r.capM / 1000).toInt()),
@@ -354,14 +380,52 @@ private fun BottomPanel(state: ShadeUiState, vm: ShadeViewModel, modifier: Modif
                 )
                 is RoutesUiResult.Success -> {
                     r.response.weather?.let { WeatherRow(it) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        r.response.options.forEachIndexed { i, opt ->
-                            OptionCard(opt, i == state.selectedOption, { vm.selectOption(i) }, Modifier.weight(1f))
+                    if (r.response.options.isEmpty()) {
+                        Text(
+                            "경로를 찾지 못했어요. 다른 출발·도착 지점을 시도해 주세요.",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary,
+                        )
+                    } else {
+                        val recommended = if (state.prefer == "sun") "sunniest" else "shadiest"
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            r.response.options.forEachIndexed { i, opt ->
+                                OptionCard(
+                                    opt = opt,
+                                    selected = i == state.selectedOption,
+                                    recommended = opt.name == recommended,
+                                    onClick = { vm.selectOption(i) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
+                        val note = if (r.response.routing == "grid") " · 대략 경로" else ""
+                        Text(
+                            "추정치 · 건물 그림자 기준$note",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+                        )
                     }
                 }
             }
+
+            // 출발/도착이 정해지면 '시원한(겨울엔 햇빛 좋은) 출발 시각'을 추천한다.
+            DepartureSection(state, vm)
         }
+    }
+}
+
+@Composable
+private fun Legend() {
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Swatch(ShadeGreen, "그늘")
+        Swatch(SunOrange, "햇빛")
+    }
+}
+
+@Composable
+private fun Swatch(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(12.dp).background(color, RoundedCornerShape(6.dp)))
+        Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -370,7 +434,13 @@ private fun optionLabel(name: String): String = when (name) {
 }
 
 @Composable
-private fun OptionCard(opt: RouteOptionOut, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun OptionCard(
+    opt: RouteOptionOut,
+    selected: Boolean,
+    recommended: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
     Card(
         modifier = modifier.clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
@@ -378,11 +448,75 @@ private fun OptionCard(opt: RouteOptionOut, selected: Boolean, onClick: () -> Un
         ),
     ) {
         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(optionLabel(opt.name), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+            if (recommended) {
+                Text("추천", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+            Text(optionLabel(opt.name), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
             Text("그늘 ${opt.shadePercent}%", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("${opt.distanceM.toInt()}m · 쾌적 ${opt.comfort.toInt()}", style = MaterialTheme.typography.labelSmall)
+            val meta = buildString {
+                append(GeoFormat.distance(opt.distanceM))
+                if (opt.durationMin > 0.0) append(" · ${GeoFormat.duration(opt.durationMin)}")
+            }
+            Text(meta, style = MaterialTheme.typography.labelSmall)
+            Text("쾌적 ${opt.comfort.toInt()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
         }
     }
+}
+
+@Composable
+private fun DepartureSection(state: ShadeUiState, vm: ShadeViewModel) {
+    if (state.origin == null || state.dest == null) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HorizontalDivider()
+        val label = if (state.prefer == "sun") "햇빛 좋은 출발 시간 추천" else "시원한 출발 시간 추천"
+        Button(onClick = vm::suggestDeparture, modifier = Modifier.fillMaxWidth()) { Text(label) }
+        when (val d = state.departure) {
+            is DepartureUiResult.Idle -> {}
+            is DepartureUiResult.Loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                CircularProgressIndicator(Modifier.size(28.dp))
+            }
+            is DepartureUiResult.Error -> Text("추천 실패: ${d.message}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            is DepartureUiResult.Success -> DepartureResult(d.response, state.departHour, vm)
+        }
+    }
+}
+
+@Composable
+private fun DepartureResult(
+    resp: com.shelter.shade.data.DepartureSuggestResponse,
+    currentHour: Int,
+    vm: ShadeViewModel,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val bestHour = hourOf(resp.best.departTime)
+        Text(
+            "${bestHour?.let { hourLabel(it) } ?: "추천"} 출발 · 그늘 ${resp.best.shadePercent}%",
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            resp.candidates.forEach { c ->
+                val h = hourOf(c.departTime)
+                FilterChip(
+                    selected = h == currentHour,
+                    onClick = { h?.let { vm.onDepartHour(it) } },
+                    label = { Text("${h ?: "?"}시 ${c.shadePercent.toInt()}%") },
+                )
+            }
+        }
+    }
+}
+
+/** ISO(예: 2026-07-15T08:00+09:00)에서 시(hour)만 뽑는다. */
+private fun hourOf(iso: String): Int? = iso.substringAfter('T', "").take(2).toIntOrNull()
+
+private fun hourLabel(h: Int): String {
+    val ampm = if (h < 12) "오전" else "오후"
+    val h12 = if (h % 12 == 0) 12 else h % 12
+    return "$ampm ${h12}시"
 }
 
 @Composable

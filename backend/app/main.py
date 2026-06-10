@@ -61,8 +61,22 @@ def build_service(settings: Settings) -> ShadeService:
 
         walk_graph = load_geojson_network(path)
 
+    # 가로수 GeoJSON 이 설정·존재하면 경로 그늘 판정에 가로수 그림자를 포함한다.
+    trees = None
+    trees_path = settings.trees_geojson
+    if trees_path and os.path.exists(trees_path):
+        from .trees_repo import GeoJSONTreesRepository
+
+        trees = GeoJSONTreesRepository(trees_path)
+
     return ShadeService(
-        repo=repo, provider=provider, settings=settings, cache=cache, walk_graph=walk_graph, pois=pois
+        repo=repo,
+        provider=provider,
+        settings=settings,
+        cache=cache,
+        walk_graph=walk_graph,
+        pois=pois,
+        trees=trees,
     )
 
 
@@ -90,14 +104,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         summary="경로의 그늘/햇빛을 판정하는 API (Phase 1 MVP)",
     )
+    _settings = settings or Settings()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # MVP. 운영에서는 앱 도메인으로 제한.
+        # 기본 '*'(개발). 운영에서는 SHELTER_CORS_ORIGINS 로 앱/웹 도메인을 지정한다.
+        allow_origins=_settings.cors_origin_list(),
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    _settings = settings or Settings()
     limiter = RateLimiter(_settings.rate_limit_per_min)
     trust_proxy = _settings.trust_proxy
 

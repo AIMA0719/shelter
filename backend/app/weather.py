@@ -10,7 +10,7 @@ import json
 import math
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from typing import Protocol
@@ -169,6 +169,11 @@ class KMAWeatherProvider:
         # 관측값이 없으면(temp 없음) stub 으로 폴백 — null 배지 반환 금지.
         if info.temp_c is None:
             return self._stub.badge(lat, lon, dt)
+        # UV 는 별도 API 미연동이라 실황엔 없다. 그대로 두면 comfort 의 최대 가중항
+        # (uv*3)이 통째로 사라져 쾌적도가 체계적으로 과대평가된다. 실측 기온은 살리되,
+        # UV 는 계절/시각 추정(stub)으로 채운다 — null 배지/누락 가중치 방지.
+        if info.uv_index is None:
+            info = replace(info, uv_index=self._stub.badge(lat, lon, dt).uv_index)
         return info
 
     def _fetch(self, lat: float, lon: float, dt: datetime) -> WeatherInfo:
