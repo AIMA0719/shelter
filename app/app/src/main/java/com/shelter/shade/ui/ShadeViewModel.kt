@@ -9,6 +9,7 @@ import com.shelter.shade.data.PlaceResult
 import com.shelter.shade.data.PlaceSearch
 import com.shelter.shade.data.RoutesResponse
 import com.shelter.shade.data.ShadeRepository
+import com.shelter.shade.data.UserPrefs
 import com.shelter.shade.engine.LocalShadeEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +63,10 @@ data class ShadeUiState(
     val searching: Boolean = false,
     // 마지막 제출이 완료됐는지 — '결과 없음' 안내를 타이핑 중이 아니라 검색 후에만 보여준다.
     val searchSubmitted: Boolean = false,
+    // 즐겨찾기·최근검색(DataStore 동기화). null=로딩 전(온보딩 게이트가 깜빡이지 않도록).
+    val favorites: List<PlaceResult> = emptyList(),
+    val recents: List<PlaceResult> = emptyList(),
+    val onboardingComplete: Boolean? = null,
 )
 
 private val KST: ZoneOffset = ZoneOffset.ofHours(9)
@@ -70,6 +76,8 @@ private val SEOUL_VIEWBOX = doubleArrayOf(126.76, 37.41, 127.19, 37.70)
 // 더 멀면 중간 지점을 거쳐 나눠서 검색하도록 안내한다.
 private const val WALK_MAX_ROUTE_M = 6_000.0
 private const val BIKE_MAX_ROUTE_M = 10_000.0
+// 최근 검색은 최신 N개만 보관(오래된 것은 밀려난다).
+private const val MAX_RECENTS = 8
 
 class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -79,6 +87,7 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
     // 서울 전역은 서버(PostGIS), 서버 실패 시 강남 권역은 온디바이스 엔진으로 폴백.
     private val repo = ShadeRepository()
     private val engine: LocalShadeEngine by lazy { LocalShadeEngine.get(getApplication()) }
+    private val prefs = UserPrefs(application)
     private var searchJob: Job? = null
     private var planJob: Job? = null
     private var suggestJob: Job? = null
@@ -96,6 +105,39 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
     init {
         // 출발 시각 기본값 = 현재 시각의 정각(분·초는 버림). departOdt 가 분/초를 0 으로 만든다.
         _state.update { it.copy(departHour = OffsetDateTime.now(KST).hour) }
+        // DataStore → 상태. 영속 데이터를 단일 출처로 삼아 화면이 항상 저장값을 반영하게 한다.
+        viewModelScope.launch { prefs.onboardingDone.collect { done -> _state.update { it.copy(onboardingComplete = done) } } }
+        viewModelScope.launch { prefs.favorites.collect { f -> _state.update { it.copy(favorites = f) } } }
+        viewModelScope.launch { prefs.recents.collect { r -> _state.update { it.copy(recents = r) } } }
+    }
+
+    // --- 온보딩 ---
+    fun completeOnboarding() = viewModelScope.launch { prefs.setOnboardingDone(true) }
+    /** 설정 → '온보딩 다시 보기'. */
+    fun resetOnboarding() = viewModelScope.launch { prefs.setOnboardingDone(false) }
+
+    // --- 즐겨찾기 / 최근 검색 ---
+    /** 같은 장소 판별 — 좌표 기준(이름/주소 표기 차이는 무시). */
+    private fun samePlace(a: PlaceResult, b: PlaceResult): Boolean =
+        kotlin.math.abs(a.lat - b.lat) < 1e-6 && kotlin.math.abs(a.lon - b.lon) < 1e-6
+
+    fun isFavorite(p: PlaceResult): Boolean = _state.value.favorites.any { samePlace(it, p) }
+
+    fun toggleFavorite(p: PlaceResult) {
+        val cur = _state.value.favorites
+        val next = if (cur.any { samePlace(it, p) }) cur.filterNot { samePlace(it, p) }
+                   else listOf(p) + cur
+        viewModelScope.launch { prefs.setFavorites(next) }
+    }
+
+    fun removeRecent(p: PlaceResult) {
+        viewModelScope.launch { prefs.setRecents(_state.value.recents.filterNot { samePlace(it, p) }) }
+    }
+
+    /** 검색 결과를 선택할 때 호출 — 최신을 맨 앞에 두고 중복 제거, 최대 [MAX_RECENTS]개. */
+    private fun recordRecent(p: PlaceResult) {
+        val next = (listOf(p) + _state.value.recents.filterNot { samePlace(it, p) }).take(MAX_RECENTS)
+        viewModelScope.launch { prefs.setRecents(next) }
     }
 
     // --- 현재 위치 ---
@@ -141,6 +183,7 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onSelectResult(r: PlaceResult) {
+        recordRecent(r)
         val ll = LatLng(r.lat, r.lon)
         _state.update {
             val s = if (it.searchTarget == PickTarget.ORIGIN) {

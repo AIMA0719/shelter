@@ -2,10 +2,14 @@ package com.shelter.shade.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 
 /**
  * A lightweight place in the result set — name, coordinates, and optional full address.
+ *
+ * `@Serializable` 이므로 즐겨찾기·최근검색 목록을 DataStore 에 JSON 으로 직렬화할 수 있다([UserPrefs]).
  */
+@Serializable
 data class PlaceResult(
     val name: String,
     val lat: Double,

@@ -80,6 +80,7 @@ dependencies {
     implementation(libs.naver.map.compose)
     implementation(libs.naver.map.sdk) // NCP_KEY_ID 인증 위해 map-sdk 3.21.0+ 강제
     implementation(libs.play.services.location) // 현재 위치(FusedLocationProviderClient)
+    implementation(libs.androidx.datastore.preferences) // 즐겨찾기·최근검색·온보딩 플래그 영속화
 
     testImplementation(libs.junit)
 }

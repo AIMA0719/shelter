@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -54,8 +53,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -119,14 +122,8 @@ fun MapScreen(viewModel: ShadeViewModel) {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result -> hasLocationPermission = result.values.any { it } }
 
-    // 앱 시작 시 위치 권한 요청.
-    LaunchedEffect(Unit) {
-        if (!hasLocationPermission) {
-            permLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-            )
-        }
-    }
+    // 위치 권한 요청은 온보딩(OnboardingScreen)에서 사유 설명과 함께 1회 진행한다.
+    // 여기서 자동 요청하면 온보딩 직후 시스템 다이얼로그가 또 떠 중복이 되므로 하지 않는다.
     // 권한이 생기면 현재 위치를 출발지로(앱 시작 시 1회). 카메라는 아래 origin effect 가 이동.
     LaunchedEffect(hasLocationPermission) {
         if (hasLocationPermission && state.origin == null) {
@@ -328,7 +325,9 @@ private fun BottomPanel(state: ShadeUiState, vm: ShadeViewModel, modifier: Modif
         shadowElevation = 10.dp,
     ) {
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)
+            // navigationBarsPadding 는 두지 않는다 — 하단 앱 네비게이션 바(ShelterApp)가
+            // 시스템 내비게이션 인셋을 이미 처리하므로 중복 여백이 생긴다.
+            Modifier.fillMaxWidth().padding(16.dp)
                 .heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -563,23 +562,103 @@ private fun SearchOverlay(state: ShadeUiState, vm: ShadeViewModel) {
                     CircularProgressIndicator()
                 }
             }
+
+            val favorites = state.favorites
+            val showResults = state.searchResults.isNotEmpty()
+            // 질의 결과가 있으면 결과를, 아직 검색 전(질의 비어있음)이면 즐겨찾기·최근검색을 보여준다.
+            val showShortcuts = !state.searching && !showResults && state.searchQuery.isBlank()
+
             LazyColumn(Modifier.fillMaxWidth()) {
-                items(state.searchResults) { r ->
-                    ResultRow(r) { vm.onSelectResult(r) }
-                    HorizontalDivider()
+                if (showResults) {
+                    items(state.searchResults) { r ->
+                        PlaceRow(
+                            r = r,
+                            isFavorite = favorites.any { it.lat == r.lat && it.lon == r.lon },
+                            onClick = { vm.onSelectResult(r) },
+                            onToggleFavorite = { vm.toggleFavorite(r) },
+                        )
+                        HorizontalDivider()
+                    }
+                } else if (showShortcuts) {
+                    if (favorites.isNotEmpty()) {
+                        item { SectionHeader("즐겨찾기", Icons.Filled.Star) }
+                        items(favorites) { r ->
+                            PlaceRow(
+                                r = r,
+                                isFavorite = true,
+                                onClick = { vm.onSelectResult(r) },
+                                onToggleFavorite = { vm.toggleFavorite(r) },
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+                    if (state.recents.isNotEmpty()) {
+                        item { SectionHeader("최근 검색", Icons.Filled.History) }
+                        items(state.recents) { r ->
+                            PlaceRow(
+                                r = r,
+                                isFavorite = favorites.any { it.lat == r.lat && it.lon == r.lon },
+                                onClick = { vm.onSelectResult(r) },
+                                onToggleFavorite = { vm.toggleFavorite(r) },
+                                onRemove = { vm.removeRecent(r) },
+                            )
+                            HorizontalDivider()
+                        }
+                    }
                 }
             }
+
             if (!state.searching && state.searchSubmitted && state.searchResults.isEmpty() && state.searchQuery.isNotBlank()) {
                 Text("검색 결과가 없어요. (서울 지역만 지원)", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(12.dp))
+            } else if (showShortcuts && favorites.isEmpty() && state.recents.isEmpty()) {
+                Text(
+                    "장소를 검색해 보세요. 결과 옆의 ☆로 즐겨찾기에 담을 수 있어요.",
+                    color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(12.dp),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ResultRow(r: PlaceResult, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp)) {
-        Text(r.name, fontWeight = FontWeight.Bold, maxLines = 1)
-        r.address?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, maxLines = 1) }
+private fun SectionHeader(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp, start = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(16.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun PlaceRow(
+    r: PlaceResult,
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onRemove: (() -> Unit)? = null,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 4.dp)) {
+            Text(r.name, fontWeight = FontWeight.Bold, maxLines = 1)
+            r.address?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, maxLines = 1) }
+        }
+        IconButton(onClick = onToggleFavorite) {
+            Icon(
+                if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                contentDescription = if (isFavorite) "즐겨찾기 해제" else "즐겨찾기 추가",
+                tint = if (isFavorite) SunOrange else MaterialTheme.colorScheme.outline,
+            )
+        }
+        if (onRemove != null) {
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Filled.Close, contentDescription = "최근 검색에서 삭제", tint = MaterialTheme.colorScheme.outline)
+            }
+        }
     }
 }

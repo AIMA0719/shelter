@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.shelter.shade.ui.MapScreen
 import com.shelter.shade.ui.ShadeViewModel
+import com.shelter.shade.ui.ShelterApp
 import com.shelter.shade.ui.theme.ShelterTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             ShelterTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    MapScreen(viewModel = viewModel)
+                    ShelterApp(viewModel = viewModel)
                 }
             }
         }
