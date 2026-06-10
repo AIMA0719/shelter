@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -68,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.naver.maps.geometry.LatLngBounds
@@ -539,12 +541,19 @@ private fun SearchOverlay(state: ShadeUiState, vm: ShadeViewModel) {
                 IconButton(onClick = vm::closeSearch) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "닫기")
                 }
+                // Nominatim 정책상 타이핑 자동완성 금지 → 엔터/돋보기로만 질의한다.
                 OutlinedTextField(
                     value = state.searchQuery,
                     onValueChange = vm::onSearchQuery,
                     placeholder = { Text(if (state.searchTarget == PickTarget.ORIGIN) "출발지 검색" else "도착지 검색") },
                     singleLine = true,
-                    keyboardActions = KeyboardActions(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { vm.onSearchSubmit() }),
+                    trailingIcon = {
+                        IconButton(onClick = vm::onSearchSubmit, enabled = state.searchQuery.isNotBlank()) {
+                            Icon(Icons.Filled.Search, contentDescription = "검색")
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -560,7 +569,7 @@ private fun SearchOverlay(state: ShadeUiState, vm: ShadeViewModel) {
                     HorizontalDivider()
                 }
             }
-            if (!state.searching && state.searchResults.isEmpty() && state.searchQuery.isNotBlank()) {
+            if (!state.searching && state.searchSubmitted && state.searchResults.isEmpty() && state.searchQuery.isNotBlank()) {
                 Text("검색 결과가 없어요. (서울 지역만 지원)", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(12.dp))
             }
         }

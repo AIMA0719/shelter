@@ -13,7 +13,6 @@ import com.shelter.shade.engine.LocalShadeEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +59,8 @@ data class ShadeUiState(
     val searchQuery: String = "",
     val searchResults: List<PlaceResult> = emptyList(),
     val searching: Boolean = false,
+    // 마지막 제출이 완료됐는지 — '결과 없음' 안내를 타이핑 중이 아니라 검색 후에만 보여준다.
+    val searchSubmitted: Boolean = false,
 )
 
 private val KST: ZoneOffset = ZoneOffset.ofHours(9)
@@ -107,25 +108,34 @@ class ShadeViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- 검색 ---
     fun openSearch(target: PickTarget) =
-        _state.update { it.copy(searchOpen = true, searchTarget = target, searchQuery = "", searchResults = emptyList()) }
+        _state.update { it.copy(searchOpen = true, searchTarget = target, searchQuery = "", searchResults = emptyList(), searchSubmitted = false) }
 
     fun closeSearch() = _state.update { it.copy(searchOpen = false) }
 
+    /** 입력 텍스트만 갱신. 질의는 명시적 제출([onSearchSubmit])에서만 나간다 —
+     *  Nominatim 정책이 키 입력마다 질의하는 자동완성을 금지하기 때문(프록시 경유여도 동일). */
     fun onSearchQuery(q: String) {
-        _state.update { it.copy(searchQuery = q) }
         searchJob?.cancel()
+        _state.update { it.copy(searchQuery = q, searching = false, searchSubmitted = false) }
         if (q.isBlank()) {
-            _state.update { it.copy(searchResults = emptyList(), searching = false) }
-            return
+            _state.update { it.copy(searchResults = emptyList()) }
         }
+    }
+
+    /** 키보드 검색 액션/검색 버튼 → 실제 지오코딩 질의. */
+    fun onSearchSubmit() {
+        val q = _state.value.searchQuery
+        if (q.isBlank()) return
         val target = _state.value.searchTarget
+        searchJob?.cancel()
         searchJob = viewModelScope.launch {
-            delay(250) // 디바운스
             _state.update { it.copy(searching = true) }
             val results = runCatching { PlaceSearch.search(q, SEOUL_VIEWBOX) }.getOrDefault(emptyList())
             // 응답이 도착했을 때도 여전히 같은 쿼리/대상일 때만 반영(오래된 응답 무시)
             _state.update {
-                if (it.searchQuery == q && it.searchTarget == target) it.copy(searchResults = results, searching = false) else it
+                if (it.searchQuery == q && it.searchTarget == target) {
+                    it.copy(searchResults = results, searching = false, searchSubmitted = true)
+                } else it
             }
         }
     }
