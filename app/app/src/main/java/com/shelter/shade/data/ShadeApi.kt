@@ -22,4 +22,17 @@ interface ShadeApi {
         @Query("max_lat") maxLat: Double,
         @Query("max_lon") maxLon: Double,
     ): PoisResponse
+
+    @GET("v1/geocode/search")
+    suspend fun geocodeSearch(
+        @Query("q") query: String,
+        @Query("limit") limit: Int = 8,
+        @Query("viewbox") viewbox: String? = null, // "minLon,minLat,maxLon,maxLat"
+    ): GeocodeSearchResponse
+
+    @GET("v1/geocode/reverse")
+    suspend fun geocodeReverse(
+        @Query("lat") lat: Double,
+        @Query("lon") lon: Double,
+    ): GeocodeReverseResponse
 }

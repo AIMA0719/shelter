@@ -78,6 +78,24 @@ data class PoisResponse(
 )
 
 @Serializable
+data class GeocodePlace(
+    val name: String,
+    val lat: Double,
+    val lon: Double,
+    val address: String? = null,
+)
+
+@Serializable
+data class GeocodeSearchResponse(
+    val results: List<GeocodePlace>,
+)
+
+@Serializable
+data class GeocodeReverseResponse(
+    val label: String? = null,
+)
+
+@Serializable
 data class WeatherBadge(
     @SerialName("temp_c") val tempC: Double? = null,
     @SerialName("uv_index") val uvIndex: Double? = null,

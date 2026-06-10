@@ -42,6 +42,17 @@ class Settings:
     # 경로 탐색 제공자: 'straight'(오프라인) | 'kakao'
     directions_provider: str = os.getenv("SHELTER_DIRECTIONS_PROVIDER", "straight")
     kakao_rest_api_key: str | None = os.getenv("SHELTER_KAKAO_REST_API_KEY")
+    # 지오코딩 프록시(Nominatim). 앱이 직접 호출하지 않고 백엔드를 경유한다(ToS 준수).
+    nominatim_base_url: str = os.getenv(
+        "SHELTER_NOMINATIM_BASE_URL", "https://nominatim.openstreetmap.org"
+    )
+    # Nominatim ToS 필수: 연락처가 포함된 유효 User-Agent.
+    geocode_user_agent: str = os.getenv(
+        "SHELTER_GEOCODE_USER_AGENT",
+        "shelter-shade-backend/0.1 (contact: tech.infocar@gmail.com)",
+    )
+    # 지오코딩 캐시 TTL(초). 결과가 사실상 정적이라 길게 잡아 업스트림 호출 최소화.
+    geocode_cache_ttl_s: float = float(os.getenv("SHELTER_GEOCODE_CACHE_TTL_S", "86400"))
     # 건물 조회 시 경로 bbox 를 이 거리(m)만큼 확장(그림자 도달 범위 고려).
     bbox_margin_m: float = float(os.getenv("SHELTER_BBOX_MARGIN_M", "300"))
     cache_max_entries: int = int(os.getenv("SHELTER_CACHE_MAX_ENTRIES", "512"))

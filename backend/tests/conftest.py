@@ -8,8 +8,10 @@ from app.config import Settings
 def _reset_service():
     """각 테스트 후 서비스 싱글턴 초기화(테스트 간 상태 격리)."""
     main.set_service(None)
+    main.set_geocoder(None)
     yield
     main.set_service(None)
+    main.set_geocoder(None)
 
 
 @pytest.fixture

@@ -137,6 +137,23 @@ class PoisResponse(BaseModel):
     pois: list[Poi]
 
 
+class GeocodePlace(BaseModel):
+    """지오코딩 결과 한 건 — 이름, 좌표, (선택) 전체 주소."""
+
+    name: str
+    lat: float
+    lon: float
+    address: str | None = None
+
+
+class GeocodeSearchResponse(BaseModel):
+    results: list[GeocodePlace]
+
+
+class GeocodeReverseResponse(BaseModel):
+    label: str | None = None
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str

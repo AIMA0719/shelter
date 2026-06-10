@@ -60,7 +60,7 @@ Pipeline through the engine modules:
 
 `backend/app/main.py` is the FastAPI app (factory `create_app`). `ShadeService` (`shade_service.py`) is the orchestration hub for every endpoint: resolve route coords → query nearby buildings → call `shade_engine` → assemble response → LRU-cache.
 
-Endpoints: `GET /health`, `POST /v1/shade` (single-route shading), `POST /v1/routes` (shortest/balanced/shade route comparison + comfort + weather), `POST /v1/departure-suggest`, `GET /v1/pois`.
+Endpoints: `GET /health`, `POST /v1/shade` (single-route shading), `POST /v1/routes` (shortest/balanced/shade route comparison + comfort + weather), `POST /v1/departure-suggest`, `GET /v1/pois`, `GET /v1/geocode/search` + `GET /v1/geocode/reverse` (Nominatim proxy — single throttled/cached egress in `geocode.py`; the app must never call Nominatim directly, that's a ToS-ban risk).
 
 Key runtime switches, all driven by env vars in `config.py` (`SHELTER_*`), resolved once in `build_service()`:
 - **Buildings/POIs repo**: `SHELTER_DB_DSN` set → PostGIS (Seoul-wide); else GeoJSON files (MVP/sample). Repos share the `BuildingsRepository` interface; PostGIS additionally implements `query_corridor` (narrow line-buffer query) which the service prefers over bbox for long routes.

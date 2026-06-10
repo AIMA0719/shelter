@@ -20,9 +20,12 @@ from .buildings_repo import GeoJSONBuildingsRepository
 from .cache import LRUCache
 from .config import Settings
 from .directions import get_provider
+from .geocode import NominatimGeocoder
 from .models import (
     DepartureSuggestRequest,
     DepartureSuggestResponse,
+    GeocodeReverseResponse,
+    GeocodeSearchResponse,
     HealthResponse,
     PoisResponse,
     RoutesRequest,
@@ -35,6 +38,7 @@ from .shade_service import ShadeService
 import os
 
 _service: ShadeService | None = None
+_geocoder: NominatimGeocoder | None = None
 
 
 def build_service(settings: Settings) -> ShadeService:
@@ -91,6 +95,25 @@ def get_service() -> ShadeService:
 def set_service(service: ShadeService | None) -> None:
     global _service
     _service = service
+
+
+def get_geocoder() -> NominatimGeocoder:
+    """지오코더 싱글턴(캐시/스로틀 상태 공유). 테스트는 set_geocoder 로 주입한다."""
+    global _geocoder
+    if _geocoder is None:
+        s = Settings()
+        _geocoder = NominatimGeocoder(
+            base_url=s.nominatim_base_url,
+            user_agent=s.geocode_user_agent,
+            cache_ttl_s=s.geocode_cache_ttl_s,
+            cache_max_entries=s.cache_max_entries,
+        )
+    return _geocoder
+
+
+def set_geocoder(geocoder: NominatimGeocoder | None) -> None:
+    global _geocoder
+    _geocoder = geocoder
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -178,6 +201,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if min_lat > max_lat or min_lon > max_lon:
             raise HTTPException(status_code=422, detail="bbox 의 min 이 max 보다 큽니다.")
         return PoisResponse(pois=svc.find_pois(min_lat, min_lon, max_lat, max_lon))
+
+    @app.get("/v1/geocode/search", response_model=GeocodeSearchResponse)
+    def geocode_search(
+        q: str = Query(..., min_length=1, max_length=200),
+        limit: int = Query(8, ge=1, le=20),
+        viewbox: str | None = Query(
+            default=None, description="결과 한정 박스: minLon,minLat,maxLon,maxLat"
+        ),
+    ) -> GeocodeSearchResponse:
+        box: tuple[float, float, float, float] | None = None
+        if viewbox:
+            try:
+                parts = [float(v) for v in viewbox.split(",")]
+            except ValueError:
+                parts = []
+            if len(parts) != 4:
+                raise HTTPException(
+                    status_code=422, detail="viewbox 는 'minLon,minLat,maxLon,maxLat' 형식입니다."
+                )
+            box = (parts[0], parts[1], parts[2], parts[3])
+        return GeocodeSearchResponse(results=get_geocoder().search(q.strip(), box, limit))
+
+    @app.get("/v1/geocode/reverse", response_model=GeocodeReverseResponse)
+    def geocode_reverse(
+        lat: float = Query(..., ge=-90, le=90),
+        lon: float = Query(..., ge=-180, le=180),
+    ) -> GeocodeReverseResponse:
+        return GeocodeReverseResponse(label=get_geocoder().reverse(lat, lon))
 
     app.state.get_service = get_service  # 테스트에서 접근/오버라이드용
     return app
